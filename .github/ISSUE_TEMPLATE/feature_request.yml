@@ -1,0 +1,22 @@
+name: Feature request
+description: Propose a compatible product improvement
+title: "[Feature] "
+labels: [enhancement]
+body:
+  - type: textarea
+    id: use-case
+    attributes:
+      label: Use case
+      description: Describe the workflow or retrieval gap, not only the desired implementation.
+    validations:
+      required: true
+  - type: textarea
+    id: constraints
+    attributes:
+      label: Constraints
+      description: Note privacy, offline, platform, performance, or compatibility requirements.
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence
+      description: Include sanitized eval or benchmark data when relevant.

@@ -1,0 +1,7 @@
+.local-wiki-index/
+node_modules/
+.npm-cache/
+*.tgz
+release-notes.md
+.package-test-*/
+.DS_Store

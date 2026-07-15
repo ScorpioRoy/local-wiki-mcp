@@ -1,0 +1,11 @@
+{
+  "includes": ["wiki"],
+  "exclude": [],
+  "indexDir": ".local-wiki-index",
+  "maxChunkChars": 2400,
+  "searchWeights": {
+    "exact": 3,
+    "title": 1.5,
+    "path": 1
+  }
+}

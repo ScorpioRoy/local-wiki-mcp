@@ -1,0 +1,41 @@
+name: Bug report
+description: Report a reproducible local-wiki failure or regression
+title: "[Bug] "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Do not include private wiki content, credentials, customer data, or full indexes.
+  - type: input
+    id: version
+    attributes:
+      label: local-wiki version
+      description: Output of local-wiki version --json
+    validations:
+      required: true
+  - type: input
+    id: platform
+    attributes:
+      label: Platform
+      description: Operating system and Node.js version
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What happened and what did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Minimal reproduction
+      description: Use sanitized files and commands only.
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Sanitized diagnostics
+      description: Relevant output from config validate, doctor --verbose, status --metrics, or explain.

@@ -1,0 +1,21 @@
+# Release Operations
+
+## Clean Tarball Installation
+
+`npm run test:pack` creates a real `.tgz`, installs it into a clean consumer project, checks packaged files, initializes a knowledge base, builds an index, and runs smoke tests.
+
+## Cross-Platform Matrix
+
+The CI matrix runs Windows, macOS, and Linux with Node.js 20, 22, and 24. Every job uses `npm ci`, unit tests, release checks, and clean-package installation.
+
+## Watch Soak
+
+`npm run test:soak` performs a short mutation test. `npm run soak:watch` defaults to twelve hours and verifies repeated updates, strict freshness, and final-marker retrieval.
+
+## Provenance Release
+
+A tagged release runs strict metadata and Git checks before `npm publish --provenance`. Repository, homepage, bugs, security contact, package ownership, and credentials must be real.
+
+## Reviewed Rollback
+
+Rollback automation only prints a plan. The reviewed commands deprecate the failed version and move a dist-tag to a known-good version; they do not unpublish history automatically.

@@ -1,0 +1,58 @@
+{
+  "name": "local-wiki-mcp",
+  "version": "0.4.0",
+  "description": "Local-first MCP search server for Markdown wiki knowledge bases, with no API keys or external services.",
+  "private": false,
+  "type": "module",
+  "license": "MIT",
+  "keywords": [
+    "mcp",
+    "local-first",
+    "wiki",
+    "codex",
+    "cursor",
+    "markdown",
+    "search"
+  ],
+  "bin": {
+    "local-wiki": "./src/cli.js",
+    "local-wiki-mcp": "./src/cli.js"
+  },
+  "scripts": {
+    "test": "node --test test",
+    "test:eval": "node scripts/product-eval.js",
+    "test:pack": "node scripts/verify-package.js",
+    "test:soak": "node scripts/watch-soak.js --duration-ms 3000 --mutation-interval-ms 400 --watch-interval-ms 100",
+    "eval:semantic": "node scripts/product-eval.js --variant-set semantic",
+    "index": "node src/cli.js index",
+    "serve": "node src/cli.js serve",
+    "smoke": "node src/cli.js smoke",
+    "soak:watch": "node scripts/watch-soak.js",
+    "pack:check": "npm pack --dry-run",
+    "release:check": "node scripts/check-release.js --local",
+    "release:check:publish": "node scripts/check-release.js",
+    "release:notes": "node scripts/release-notes.js",
+    "release:rollback-plan": "node scripts/rollback-plan.js",
+    "ci": "npm test && npm run test:eval && npm run release:check && npm run test:pack"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "files": [
+    "src/",
+    "README.md",
+    "README.zh-CN.md",
+    "CHANGELOG.md",
+    "LICENSE",
+    "TROUBLESHOOTING.md",
+    "MIGRATION_FROM_QMD.md",
+    "SECURITY.md",
+    "RELEASING.md",
+    "codex.config.example.toml",
+    "cursor.mcp.example.json"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  }
+}

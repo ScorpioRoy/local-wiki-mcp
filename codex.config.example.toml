@@ -1,0 +1,12 @@
+[mcp_servers.local_wiki]
+command = 'node'
+args = [
+  '<LOCAL_WIKI_PACKAGE>/src/cli.js',
+  'serve',
+  '--root',
+  '<MEMORY_ROOT>'
+]
+startup_timeout_sec = 10
+tool_timeout_sec = 30
+enabled = true
+enabled_tools = ['search_wiki', 'grep_wiki', 'read_wiki', 'status_wiki']

@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "local-wiki": {
+      "command": "node",
+      "args": [
+        "<LOCAL_WIKI_PACKAGE>/src/cli.js",
+        "serve",
+        "--root",
+        "<MEMORY_ROOT>"
+      ]
+    }
+  }
+}

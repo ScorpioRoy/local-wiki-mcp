@@ -1,0 +1,31 @@
+name: Watch soak
+
+on:
+  schedule:
+    - cron: "17 18 * * 6"
+  workflow_dispatch:
+    inputs:
+      duration_ms:
+        description: Soak duration in milliseconds
+        required: true
+        default: "3600000"
+
+permissions:
+  contents: read
+
+jobs:
+  watch:
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: node scripts/watch-soak.js --duration-ms ${{ inputs.duration_ms || '3600000' }}

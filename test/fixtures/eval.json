@@ -1,0 +1,67 @@
+{
+  "default_variant_set": "intent",
+  "variant_sets": {
+    "intent": ["find {query}", "{query} help"]
+  },
+  "fixtures": [
+    { "query": "local-first no API key external service network", "variants": ["private offline retrieval without cloud credentials", "does the search tool upload my notes"], "expected": ["wiki/product/overview.md"], "category": "overview", "top_k": 5 },
+    { "query": "BM25 character trigram exact heading path boosts", "variants": ["how hybrid ranking combines fuzzy and lexical evidence", "is the n-gram vector a dense embedding"], "expected": ["wiki/product/overview.md"], "category": "overview", "top_k": 5 },
+    { "query": "Markdown text HTML Chinese identifiers configuration paths", "variants": ["which document formats and query languages are supported", "searching code names errors and filenames"], "expected": ["wiki/product/overview.md"], "category": "overview", "top_k": 5 },
+    { "query": "Node.js 20 22 24 Windows macOS Linux", "variants": ["supported runtimes and operating systems", "cross-platform compatibility matrix"], "expected": ["wiki/product/overview.md"], "category": "overview", "top_k": 5 },
+    { "query": "Markdown source of truth derived index rebuild", "variants": ["which data is authoritative and which cache is disposable", "can index.json replace original documents"], "expected": ["wiki/product/overview.md"], "category": "overview", "top_k": 5 },
+
+    { "query": ".local-wiki.json includes exclude source discovery", "variants": ["select folders while omitting private drafts", "configure the knowledge files to scan"], "expected": ["wiki/product/configuration.md"], "category": "configuration", "top_k": 5 },
+    { "query": "indexDir maxChunkChars 2400 chunk size", "variants": ["change generated index location and passage length", "where are chunks stored and how large are they"], "expected": ["wiki/product/configuration.md"], "category": "configuration", "top_k": 5 },
+    { "query": "searchWeights exact title path non-negative", "variants": ["tune phrase heading and filename ranking", "configure lexical boost values"], "expected": ["wiki/product/configuration.md"], "category": "configuration", "top_k": 5 },
+    { "query": "mcpCache reloadCheckTtlMs freshnessTtlMs", "variants": ["reduce repeated index stats and source scans", "MCP cache timing configuration"], "expected": ["wiki/product/configuration.md"], "category": "configuration", "top_k": 5 },
+    { "query": "watch intervalMs strictEvery config validate", "variants": ["polling and periodic hash settings", "diagnose malformed configuration before serving"], "expected": ["wiki/product/configuration.md"], "category": "configuration", "top_k": 5 },
+
+    { "query": "version init config validate index smoke setup", "variants": ["commands for creating and checking a new wiki", "first-run initialization workflow"], "expected": ["wiki/product/commands.md"], "category": "commands", "top_k": 5 },
+    { "query": "search grep read explain retrieval commands", "variants": ["concept query exact text full chunk and ranking evidence", "which CLI action should I use to find knowledge"], "expected": ["wiki/product/commands.md"], "category": "commands", "top_k": 5 },
+    { "query": "sync watch repair force refresh commands", "variants": ["update normal edits automatically or rebuild corruption", "how to refresh the local index"], "expected": ["wiki/product/commands.md"], "category": "commands", "top_k": 5 },
+    { "query": "status strict metrics doctor verbose inspection", "variants": ["check freshness density runtime and lock state", "deep health diagnostics commands"], "expected": ["wiki/product/commands.md"], "category": "commands", "top_k": 5 },
+    { "query": "bench eval audit serve quality commands", "variants": ["measure latency retrieval accuracy encoding and MCP", "operational quality tool list"], "expected": ["wiki/product/commands.md"], "category": "commands", "top_k": 5 },
+
+    { "query": "search_wiki query top_k max_chunks_per_path diversity", "variants": ["ranked concept snippets with one result per file", "MCP semantic-style search arguments"], "expected": ["wiki/product/mcp.md"], "category": "mcp", "top_k": 5 },
+    { "query": "grep_wiki exact pattern errors config class function", "variants": ["find a literal identifier through MCP", "tool for exact substring lookup"], "expected": ["wiki/product/mcp.md"], "category": "mcp", "top_k": 5 },
+    { "query": "read_wiki target path suffix chunk id max_chars", "variants": ["retrieve indexed text after finding a result", "read one document passage through MCP"], "expected": ["wiki/product/mcp.md"], "category": "mcp", "top_k": 5 },
+    { "query": "status_wiki strict added changed deleted files", "variants": ["inspect stale source state through MCP", "hash all current documents and report differences"], "expected": ["wiki/product/mcp.md"], "category": "mcp", "top_k": 5 },
+    { "query": "plain serve read-only four tools serve --watch writes", "variants": ["does starting the MCP server mutate my index", "explicit opt-in automatic refresh contract"], "expected": ["wiki/product/mcp.md"], "category": "mcp", "top_k": 5 },
+
+    { "query": "index v3 tokenCount vectorNorm compact JSON", "variants": ["current search index format and stored features", "why legacy token arrays were removed"], "expected": ["wiki/product/indexing.md"], "category": "indexing", "top_k": 5 },
+    { "query": "incremental mtime size reuse chunkIds term counts vectors sha256", "variants": ["how unchanged documents avoid rereading and tokenizing", "fast path for normal sync"], "expected": ["wiki/product/indexing.md"], "category": "indexing", "top_k": 5 },
+    { "query": "strict freshness SHA-256 same timestamp byte size", "variants": ["detect content edits hidden from metadata checks", "full hash verification mode"], "expected": ["wiki/product/indexing.md"], "category": "indexing", "top_k": 5 },
+    { "query": "atomic rename index.lock concurrent writers stale ten minutes", "variants": ["prevent two refresh operations from corrupting output", "recover an abandoned indexing lock"], "expected": ["wiki/product/indexing.md"], "category": "indexing", "top_k": 5 },
+    { "query": "MCP index store parsed JSON reload file metadata freshness TTL", "variants": ["avoid loading and scanning on every tool call", "long-running server memory cache behavior"], "expected": ["wiki/product/indexing.md"], "category": "indexing", "top_k": 5 },
+
+    { "query": "Codex config.toml Windows backslash illegal escapes", "variants": ["MCP startup fails after editing a Windows TOML path", "use forward slashes or literal strings in Codex"], "expected": ["wiki/product/troubleshooting.md"], "category": "troubleshooting", "top_k": 5 },
+    { "query": "new Markdown missing status sync stale warning", "variants": ["recent wiki edits do not appear in search", "refresh an outdated knowledge index"], "expected": ["wiki/product/troubleshooting.md"], "category": "troubleshooting", "top_k": 5 },
+    { "query": "corrupt missing unreadable index repair force doctor smoke", "variants": ["recover a broken index.json", "full rebuild and readiness verification"], "expected": ["wiki/product/troubleshooting.md"], "category": "troubleshooting", "top_k": 5 },
+    { "query": "Chinese mojibake replacement characters UTF-8 audit", "variants": ["terminal shows garbled multilingual text", "verify whether a Markdown file encoding is damaged"], "expected": ["wiki/product/troubleshooting.md"], "category": "troubleshooting", "top_k": 5 },
+    { "query": "EPERM restricted Windows npm cache isolated temporary", "variants": ["package test cannot create the user cache directory", "run npm tarball verification in a controlled workspace"], "expected": ["wiki/product/troubleshooting.md"], "category": "troubleshooting", "top_k": 5 },
+
+    { "query": "test:pack tgz clean consumer init index smoke", "variants": ["verify the actual npm artifact after installation", "tarball end-to-end package test"], "expected": ["wiki/product/release.md"], "category": "release", "top_k": 5 },
+    { "query": "CI matrix Windows macOS Linux Node 20 22 24", "variants": ["which platforms must pass before release", "cross-platform continuous integration coverage"], "expected": ["wiki/product/release.md"], "category": "release", "top_k": 5 },
+    { "query": "test:soak soak:watch twelve hours mutation freshness marker", "variants": ["long-running automatic refresh reliability test", "repeated file changes and final retrieval verification"], "expected": ["wiki/product/release.md"], "category": "release", "top_k": 5 },
+    { "query": "npm publish provenance metadata Git tag credentials", "variants": ["strict prerequisites for a public package release", "supply chain attestation and repository ownership"], "expected": ["wiki/product/release.md"], "category": "release", "top_k": 5 },
+    { "query": "rollback plan deprecate failed version move dist-tag no unpublish", "variants": ["restore latest to a known good package safely", "reviewed npm release recovery steps"], "expected": ["wiki/product/release.md"], "category": "release", "top_k": 5 },
+
+    { "query": "会话启动 MEMORY 最近工作 wiki 索引 search_wiki", "variants": ["新对话如何按层读取本地记忆", "不要一次打开全部长文档"], "expected": ["wiki/guides/chinese.md"], "category": "chinese", "top_k": 5 },
+    { "query": "中文检索 二元 三元 字词项 英文标识符", "variants": ["汉字查询如何生成词法特征", "专有配置键应保留原文"], "expected": ["wiki/guides/chinese.md"], "category": "chinese", "top_k": 5 },
+    { "query": "知识库新增 修改 sync watch 普通 serve 只读", "variants": ["编辑文档后怎样自动或手动刷新", "MCP 服务是否会自行写索引"], "expected": ["wiki/guides/chinese.md"], "category": "chinese", "top_k": 5 },
+    { "query": "Markdown UTF-8 PowerShell 乱码 audit 原始文件", "variants": ["中文显示异常时如何确认编码", "不能根据终端输出直接覆盖正文"], "expected": ["wiki/guides/chinese.md"], "category": "chinese", "top_k": 5 },
+    { "query": "本地索引 原文片段 敏感 Markdown 删除 同步", "variants": ["清理隐私数据时还要处理派生缓存", "分享模板不能包含客户和个人日志"], "expected": ["wiki/guides/chinese.md"], "category": "chinese", "top_k": 5 },
+
+    { "query": "AUTH_CACHE_MISS_2047 authorization cache error", "variants": ["exact fictional auth miss code", "lookup the local permission cache failure"], "expected": ["wiki/guides/identifiers.md"], "category": "identifiers", "top_k": 5 },
+    { "query": "updateCustomerProfileCache function", "variants": ["method that refreshes the sanitized profile entry", "find the example customer cache updater"], "expected": ["wiki/guides/identifiers.md"], "category": "identifiers", "top_k": 5 },
+    { "query": "com.example.knowledge.LocalWikiIndexService class", "variants": ["fictional service owning index freshness", "search a fully qualified Java type"], "expected": ["wiki/guides/identifiers.md"], "category": "identifiers", "top_k": 5 },
+    { "query": "packages/desktop/config/local-wiki.settings.json path", "variants": ["desktop settings filename location", "find an exact nested configuration path"], "expected": ["wiki/guides/identifiers.md"], "category": "identifiers", "top_k": 5 },
+    { "query": "LOCAL_WIKI_STRICT_REFRESH environment variable", "variants": ["fictional flag enabling strict refresh", "lookup an uppercase configuration identifier"], "expected": ["wiki/guides/identifiers.md"], "category": "identifiers", "top_k": 5 },
+
+    { "query": "Atlas atlasRetentionDays thirty days", "variants": ["how long the fictional Atlas summaries are retained", "setting for the Atlas retention window"], "expected": ["wiki/guides/long-document.md"], "category": "long-document", "top_k": 5 },
+    { "query": "Beacon rotateBeaconKeyset seven days", "variants": ["fictional key rotation procedure and interval", "Beacon local signing material schedule"], "expected": ["wiki/guides/long-document.md"], "category": "long-document", "top_k": 5 },
+    { "query": "Cedar CEDAR_SCHEMA_12 migration backup", "variants": ["fictional note metadata upgrade id", "Cedar schema rewrite safety step"], "expected": ["wiki/guides/long-document.md"], "category": "long-document", "top_k": 5 },
+    { "query": "Delta delta-recovery.json checkpoint hashes", "variants": ["recover the fictional Delta local snapshot", "file storing the last consistent recovery point"], "expected": ["wiki/guides/long-document.md"], "category": "long-document", "top_k": 5 },
+    { "query": "Ember ember-audit.log sanitized events result codes", "variants": ["fictional audit trail without document bodies", "Ember operation timestamp log"], "expected": ["wiki/guides/long-document.md"], "category": "long-document", "top_k": 5 }
+  ]
+}
