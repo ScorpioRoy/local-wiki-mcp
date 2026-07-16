@@ -1,21 +1,27 @@
-# Security
+# 安全说明
 
-`local-wiki-mcp` is designed to run locally and read a user-selected Markdown knowledge base.
+`local-wiki-mcp` 设计为在本机运行，并读取用户明确选择的 Markdown 知识库。
 
-## Data Boundary
+## 数据边界
 
-- No external API key is required.
-- No external service is contacted by the tool.
-- The MCP tools are read-only for normal client calls.
-- Index files are written only by explicit CLI commands such as `index`, `sync`, and `repair`.
-- `serve --watch` is an explicit opt-in that permits automatic index writes; plain `serve` remains read-only.
-- Symbolic links are skipped so includes cannot escape the selected knowledge-base root through a link.
-- Index reads and writes reject `indexDir` paths outside the selected root and reject symbolic-link components below that root.
+- 默认运行不需要外部 API key。
+- 运行时不会主动调用外部服务。
+- 普通 MCP 调用只提供只读知识工具。
+- 只有 `index`、`sync`、`repair` 等显式 CLI 命令会写索引。
+- `serve --watch` 是允许自动索引写入的显式选项；普通 `serve` 保持只读。
+- 源文件发现会跳过符号链接，避免 include 通过链接逃出知识库根目录。
+- 索引读写拒绝根目录外的 `indexDir`，也拒绝根目录下包含符号链接的索引路径。
 
-## Sensitive Content
+## 敏感内容
 
-Do not put secrets, credentials, private customer data, or regulated data in a shared knowledge base unless your team has approved that storage. The local index contains excerpts and searchable tokens derived from source files, so deleting only the original Markdown is not enough; run `local-wiki sync` or remove the index directory too.
+除非团队已批准相应存储方式，否则不要把密码、token、客户隐私、受监管数据或生产凭据写入共享知识库。
 
-## Reporting Issues
+本地索引包含原文片段和可搜索特征。删除 Markdown 源文件后，还必须运行 `local-wiki sync` 或删除索引目录，不能只删除原文。
 
-If you package this for others, publish a project-specific security contact in this file before distribution. Until then, handle reports through the repository or distribution channel you control.
+## 报告安全问题
+
+请通过 GitHub Security Advisories 私密报告：
+
+<https://github.com/ScorpioRoy/local-wiki-mcp/security/advisories/new>
+
+不要在公开 Issue 中提交凭据、私有 Wiki 内容、客户数据或可直接利用的漏洞细节。

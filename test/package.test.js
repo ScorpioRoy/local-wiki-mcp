@@ -12,6 +12,7 @@ test("package metadata is ready for product distribution", async () => {
   assert.deepEqual(Object.keys(pkg.bin).sort(), ["local-wiki", "local-wiki-mcp"]);
   assert(pkg.files.includes("src/"));
   assert(pkg.files.includes("README.md"));
+  assert(pkg.files.includes("README.en.md"));
   assert(pkg.files.includes("README.zh-CN.md"));
   assert(pkg.files.includes("MIGRATION_FROM_QMD.md"));
   assert(pkg.files.includes("RELEASING.md"));

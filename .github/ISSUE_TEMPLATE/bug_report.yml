@@ -1,41 +1,41 @@
-name: Bug report
-description: Report a reproducible local-wiki failure or regression
+name: 缺陷报告
+description: 报告可复现的 local-wiki 故障或回归
 title: "[Bug] "
 labels: [bug]
 body:
   - type: markdown
     attributes:
-      value: Do not include private wiki content, credentials, customer data, or full indexes.
+      value: 请勿提交私有 Wiki、凭据、客户数据或完整索引。
   - type: input
     id: version
     attributes:
-      label: local-wiki version
-      description: Output of local-wiki version --json
+      label: local-wiki 版本
+      description: 请提供 local-wiki version --json 输出
     validations:
       required: true
   - type: input
     id: platform
     attributes:
-      label: Platform
-      description: Operating system and Node.js version
+      label: 运行平台
+      description: 操作系统和 Node.js 版本
     validations:
       required: true
   - type: textarea
     id: problem
     attributes:
-      label: Problem
-      description: What happened and what did you expect?
+      label: 问题描述
+      description: 实际发生了什么，预期行为是什么？
     validations:
       required: true
   - type: textarea
     id: reproduce
     attributes:
-      label: Minimal reproduction
-      description: Use sanitized files and commands only.
+      label: 最小复现
+      description: 只使用脱敏文件和命令。
     validations:
       required: true
   - type: textarea
     id: diagnostics
     attributes:
-      label: Sanitized diagnostics
-      description: Relevant output from config validate, doctor --verbose, status --metrics, or explain.
+      label: 脱敏诊断信息
+      description: 可提供 config validate、doctor --verbose、status --metrics 或 explain 的相关输出。

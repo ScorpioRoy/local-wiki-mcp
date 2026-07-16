@@ -1,28 +1,28 @@
-# Migrating From qmd
+# 从 qmd 迁移
 
-`local-wiki-mcp` is a local-first replacement path for teams that need stable Markdown knowledge retrieval in Codex, Cursor, or other MCP clients.
+`local-wiki-mcp` 为需要在 Codex、Cursor 或其他 MCP 客户端中稳定检索本地 Markdown 的团队提供本地优先替代路径。
 
-## What Changes
+## 主要变化
 
-- qmd commands are replaced with `local-wiki` commands.
-- Collections are replaced by a root directory plus `.local-wiki.json`.
-- External API keys are not required.
-- Native SQLite, Python, GGUF models, and external vector databases are not required.
+- qmd 命令改为 `local-wiki` 命令。
+- collection 改为知识库根目录和 `.local-wiki.json`。
+- 不需要外部 API key。
+- 不需要原生 SQLite、Python、GGUF 模型或外部向量数据库。
 
-## Command Mapping
+## 命令对应
 
-| qmd workflow | local-wiki workflow |
+| qmd 工作流 | local-wiki 工作流 |
 | --- | --- |
-| Build embeddings | `local-wiki index --root <MEMORY_ROOT>` |
-| Refresh after edits | `local-wiki sync --root <MEMORY_ROOT>` |
-| Search collection | `local-wiki search "<query>" --root <MEMORY_ROOT>` |
-| Exact search | `local-wiki grep "<text>" --root <MEMORY_ROOT>` |
-| Inspect status | `local-wiki status --root <MEMORY_ROOT>` |
-| Diagnose setup | `local-wiki doctor --root <MEMORY_ROOT>` |
+| 构建 embeddings | `local-wiki index --root <MEMORY_ROOT>` |
+| 编辑后刷新 | `local-wiki sync --root <MEMORY_ROOT>` |
+| 检索 collection | `local-wiki search "<query>" --root <MEMORY_ROOT>` |
+| 精确检索 | `local-wiki grep "<text>" --root <MEMORY_ROOT>` |
+| 查看状态 | `local-wiki status --root <MEMORY_ROOT>` |
+| 诊断配置 | `local-wiki doctor --root <MEMORY_ROOT> --verbose` |
 
-## Recommended Config
+## 推荐配置
 
-Create `.local-wiki.json` in the knowledge-base root:
+在知识库根目录创建 `.local-wiki.json`：
 
 ```json
 {
@@ -38,17 +38,17 @@ Create `.local-wiki.json` in the knowledge-base root:
 }
 ```
 
-## MCP Tool Names
+## MCP 工具名
 
-Keep these tool names stable in prompts and rules:
+Prompt 和规则继续使用以下稳定工具名：
 
 - `search_wiki`
 - `grep_wiki`
 - `read_wiki`
 - `status_wiki`
 
-## Accuracy Notes
+## 准确性说明
 
-qmd can use dense embeddings and reranking. `local-wiki-mcp` currently uses a deterministic hybrid of BM25-like tokens, character n-grams, exact phrase boosts, title boosts, and path boosts. It is very fast and stable for local Markdown, configuration names, file paths, Chinese phrases, and project notes.
+qmd 可以使用 dense embedding 和 reranking。当前 `local-wiki-mcp` 使用确定性的 BM25 风格词项、字符 n-gram、精确短语、标题和路径加权，适合本地 Markdown、配置名、路径、中文短语和项目笔记。
 
-The v0.4 evaluation fixture separates intent-noise retrieval from semantic paraphrases. This makes the embedding gap measurable instead of assuming that n-grams are semantic vectors. A future optional local embedding provider can be added behind the same MCP tool names without forcing API keys or external services on the default installation.
+v0.4 评测将意图噪声检索和语义改写分开统计，避免把 n-gram 误称为语义向量。后续可以在不改变 MCP 工具名、不强制 API key 和外部服务的前提下增加可选本地 embedding provider。

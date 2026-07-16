@@ -1,60 +1,59 @@
 # local-wiki-mcp
 
-`local-wiki-mcp` is a local-first search server for Markdown knowledge bases. It exposes read-only MCP tools for Codex, Cursor, and other AI coding tools, without API keys, hosted services, or native dependencies.
+`local-wiki-mcp` 是面向 Codex、Cursor 和其他 MCP 客户端的本地 Markdown 知识库检索工具。它默认只在本机运行，不需要外接大模型 API key、托管服务、Python、原生数据库或向量数据库。
 
-Chinese guide: [README.zh-CN.md](README.zh-CN.md)
+English documentation: [README.en.md](README.en.md)
 
-It is designed for `agent-memory` style LLM wiki systems:
+它适合 `agent-memory`、LLM Wiki 和团队内部技术知识库：
 
-- Fast local indexing into `.local-wiki-index/index.json`.
-- Hybrid retrieval with BM25-like tokens, character n-grams, exact phrase boosts, title boosts, and path boosts.
-- Good coverage for Chinese notes, English identifiers, file paths, API names, and configuration snippets.
-- Stable MCP tools: `search_wiki`, `grep_wiki`, `read_wiki`, `status_wiki`.
-- Incremental `sync` for day-to-day wiki edits.
-- Compact index v3 with cached MCP loading and fast query-side n-gram scoring.
-- Path-diverse results by default, with configurable per-file chunk limits.
-- Config validation, verbose diagnostics, index metrics, and score explanations for product operation.
-- Clean package-install verification, release gates, and watch soak tooling for team distribution.
+- 将本地 Markdown、文本和 HTML 构建为 `.local-wiki-index/index.json`。
+- 使用 BM25 风格词项评分、字符 n-gram 余弦相似度、精确短语、标题和路径加权进行混合检索。
+- 稳定覆盖中文知识、英文标识符、配置项、报错、API 名和文件路径。
+- 提供稳定的只读 MCP 工具：`search_wiki`、`grep_wiki`、`read_wiki`、`status_wiki`。
+- 支持真正增量的 `sync`、MCP 进程内缓存、路径去重和索引过期提示。
+- 提供配置校验、详细诊断、索引指标、检索解释、评测、打包验证和 watch 耐久性测试。
 
-## Requirements
+## 环境要求
 
-- Node.js 20 or newer.
-- A local Markdown knowledge base.
-- No external model, vector database, or API key.
+- Node.js 20 或更高版本。
+- 一个本地 Markdown 知识库目录。
+- 默认运行不需要外部模型、向量数据库或 API key。
 
-## Quick Start
+## 快速开始
 
-From this package directory, an unpublished local install can be linked globally:
+在源码目录进行本地全局安装：
 
 ```powershell
 npm install -g .
 ```
 
+初始化并验证知识库：
+
 ```powershell
 local-wiki version
-local-wiki init --root . --template agent-memory
-local-wiki config validate --root .
-local-wiki index --root .
-local-wiki smoke --root .
-local-wiki search "Codex MCP local wiki" --root .
+local-wiki init --root D:\path\to\agent-memory --template agent-memory
+local-wiki config validate --root D:\path\to\agent-memory
+local-wiki index --root D:\path\to\agent-memory
+local-wiki smoke --root D:\path\to\agent-memory
+local-wiki search "Codex MCP 本地知识库" --root D:\path\to\agent-memory
 ```
 
-After wiki edits, run:
+知识库发生日常修改后执行增量刷新：
 
 ```powershell
-node tools/local-wiki-mcp/src/cli.js sync --root .
+local-wiki sync --root D:\path\to\agent-memory
 ```
 
-If the index is missing, corrupt, or stale:
+索引缺失、损坏或需要完整重建时：
 
 ```powershell
-node tools/local-wiki-mcp/src/cli.js repair --root .
-node tools/local-wiki-mcp/src/cli.js doctor --root .
+local-wiki repair --root D:\path\to\agent-memory --force
+local-wiki doctor --root D:\path\to\agent-memory --verbose
 ```
 
-## Configuration
+## 配置文件
 
-Create `.local-wiki.json` in the knowledge-base root:
+在知识库根目录创建 `.local-wiki.json`：
 
 ```json
 {
@@ -78,15 +77,15 @@ Create `.local-wiki.json` in the knowledge-base root:
 }
 ```
 
-Command-line flags override the config file:
+命令行参数会覆盖配置文件：
 
 ```powershell
-node tools/local-wiki-mcp/src/cli.js index --root . --include wiki --index-dir .custom-index --max-chars 1800
+local-wiki index --root . --include wiki --index-dir .custom-index --max-chars 1800
 ```
 
-Default includes are `wiki` and `MEMORY.md`. Built-in skipped directories include `.git`, `.state`, `.local-wiki-index`, and `node_modules`.
+默认索引 `wiki` 和 `MEMORY.md`。内置跳过目录包括 `.git`、`.state`、`.local-wiki-index` 和 `node_modules`。
 
-Validate values and source paths before starting MCP:
+启动 MCP 前建议执行：
 
 ```powershell
 local-wiki config validate --root .
@@ -94,51 +93,52 @@ local-wiki doctor --root . --verbose
 local-wiki status --root . --strict --metrics
 ```
 
-Validation reports malformed JSON, invalid numeric values, unknown fields, missing includes, and paths that escape the knowledge-base root. Existing configs remain normalized for backward compatibility.
+`config validate` 会报告 JSON 语法错误、非法数值、未知字段、缺失 include 和逃出知识库根目录的路径。即使用户跳过校验，索引读写仍会拒绝越界的 `indexDir` 和符号链接目录。
 
-## Commands
+## 命令概览
 
 ```text
-version [--json]                         Show product and runtime versions
-init    [--root DIR] [--template NAME]   Create an agent-memory or minimal skeleton
-index   [--root DIR] [--include PATH]    Full rebuild of the local JSON index
-sync    [--root DIR] [--include PATH]    Incrementally refresh the local JSON index
-search  <query> [--root DIR]             Hybrid search with path diversity
-explain <query> [--root DIR]             Explain query parsing and score evidence
-grep    <pattern> [--root DIR]           Exact substring search
-read    <path-or-id> [--root DIR]        Read indexed chunks
-status  [--root DIR] [--strict]          Show index metadata and stale state
-        [--metrics]                      Include index size and density metrics
-doctor  [--root DIR] [--verbose]         Diagnose runtime, config, index, and MCP health
-repair  [--root DIR] [--force]           Rebuild a missing, corrupt, or stale index
-bench   [--root DIR] [--query TEXT]      Measure load and search latency
-eval    [--root DIR] --fixture FILE      Score search against query fixtures
-smoke   [--root DIR]                     Verify index and MCP search readiness
-watch   [--root DIR] [--interval-ms N]   Auto-sync changed knowledge files
-config  codex|cursor [--root DIR]        Print MCP configuration snippets
-config  validate [--root DIR]            Validate config values and source paths
-audit   [--root DIR]                     Check mojibake and legacy qmd rules
-serve   [--root DIR] [--watch]           Start the MCP stdio server
+version [--json]                         显示产品、索引和运行时版本
+init    [--root DIR] [--template NAME]   创建 agent-memory 或 minimal 骨架
+index   [--root DIR] [--include PATH]    完整构建本地 JSON 索引
+sync    [--root DIR] [--include PATH]    增量刷新索引
+search  <query> [--root DIR]             混合检索并默认按路径去重
+explain <query> [--root DIR]             解释查询分析和结果评分
+grep    <pattern> [--root DIR]           精确子字符串检索
+read    <path-or-id> [--root DIR]        读取索引片段
+status  [--root DIR] [--strict]          查看索引元数据和过期状态
+        [--metrics]                      输出索引大小和密度指标
+doctor  [--root DIR] [--verbose]         诊断运行时、配置、索引和 MCP
+repair  [--root DIR] [--force]           重建缺失、损坏或过期索引
+bench   [--root DIR] [--query TEXT]      测量加载和检索延迟
+eval    [--root DIR] --fixture FILE      运行检索质量评测
+        [--variant-set NAME] [--summary] 选择 query 集并省略逐条结果
+smoke   [--root DIR]                     验证索引和 MCP 检索是否可用
+watch   [--root DIR] [--interval-ms N]   自动同步知识文件变化
+config  codex|cursor [--root DIR]        输出 MCP 配置片段
+config  validate [--root DIR]            校验配置值和源路径
+audit   [--root DIR]                     检查乱码和遗留 qmd 规则
+serve   [--root DIR] [--watch]           启动 MCP stdio 服务
 ```
 
-Use `explain` when a result ranks unexpectedly. It reports normalized query tokens, trigram counts, active weights, BM25/vector/boost components, matched terms, and diversity filtering without changing the index.
+`explain` 适合排查排名异常。它会输出规范化查询、token、trigram 数量、启用权重、BM25/vector/boost 分项、命中词项和多样性过滤情况，但不会修改索引。
 
-## MCP Tools
+## MCP 工具
 
 ### `search_wiki`
 
-Use for concepts, decisions, setup notes, and workflow knowledge.
+用于概念、决策、方案、历史经验和工作流知识：
 
 ```json
 {
-  "query": "Codex MCP local wiki",
+  "query": "Codex MCP 本地知识库",
   "top_k": 8,
   "max_chunks_per_path": 1,
   "diversity": true
 }
 ```
 
-If the index is stale, the response includes:
+索引过期时响应会带有：
 
 ```json
 {
@@ -154,7 +154,7 @@ If the index is stale, the response includes:
 
 ### `grep_wiki`
 
-Use for exact text, config keys, error messages, paths, class names, and function names.
+用于配置键、报错、路径、类名、函数名和其他精确文本：
 
 ```json
 {
@@ -165,7 +165,7 @@ Use for exact text, config keys, error messages, paths, class names, and functio
 
 ### `read_wiki`
 
-Read indexed chunks by path, path suffix, or chunk id.
+按完整路径、路径后缀或 chunk id 读取索引文本：
 
 ```json
 {
@@ -176,57 +176,57 @@ Read indexed chunks by path, path suffix, or chunk id.
 
 ### `status_wiki`
 
-Returns index version, creation time, chunk count, indexed includes, and stale-state details.
+返回索引版本、创建时间、chunk 数、include 和 added/changed/deleted 状态。设置 `strict: true` 会对当前源文件执行完整哈希校验。
 
-Set `strict: true` to hash all source files. Normal searches use a short freshness cache to avoid rescanning the knowledge base on every MCP call.
+普通搜索使用短时 freshness cache，避免每次 MCP 调用都扫描整个知识库。
 
-## Automatic Refresh
+## 自动刷新
 
-Run a separate watcher:
+单独运行 watcher：
 
 ```powershell
 local-wiki watch --root . --interval-ms 2000
 ```
 
-Or opt in while serving MCP:
+或者显式允许 MCP 服务自动刷新：
 
 ```powershell
 local-wiki serve --root . --watch
 ```
 
-The default `serve` command remains read-only. Watch mode uses atomic writes, an index-operation lock, fast mtime/size checks, and a periodic strict hash pass.
+默认 `serve` 始终只读。只有显式 `--watch` 才会自动写索引。watch 使用原子写入、索引操作锁、mtime/size 快速检查和周期严格哈希。
 
-## Codex Configuration
+## Codex 配置
 
-Generate a safe TOML snippet:
+生成安全的 TOML 片段：
 
 ```powershell
-node tools/local-wiki-mcp/src/cli.js config codex --root D:\path\to\agent-memory
+local-wiki config codex --root D:\path\to\agent-memory
 ```
 
-Example:
+示例：
 
 ```toml
 [mcp_servers.local_wiki]
 command = 'node'
-args = ['D:/path/to/agent-memory/tools/local-wiki-mcp/src/cli.js', 'serve', '--root', 'D:/path/to/agent-memory']
+args = ['D:/path/to/local-wiki-mcp/src/cli.js', 'serve', '--root', 'D:/path/to/agent-memory']
 startup_timeout_sec = 10
 tool_timeout_sec = 30
 enabled = true
 enabled_tools = ['search_wiki', 'grep_wiki', 'read_wiki', 'status_wiki']
 ```
 
-Use forward slashes or TOML single quotes for Windows paths.
+Windows 路径使用正斜杠或 TOML 单引号，避免反斜杠触发非法转义。
 
-## Cursor Configuration
+## Cursor 配置
 
-Generate a Cursor MCP snippet:
+生成 Cursor MCP 片段：
 
 ```powershell
-node tools/local-wiki-mcp/src/cli.js config cursor --root D:\path\to\agent-memory
+local-wiki config cursor --root D:\path\to\agent-memory
 ```
 
-Example:
+示例：
 
 ```json
 {
@@ -234,7 +234,7 @@ Example:
     "local-wiki": {
       "command": "node",
       "args": [
-        "D:/path/to/agent-memory/tools/local-wiki-mcp/src/cli.js",
+        "D:/path/to/local-wiki-mcp/src/cli.js",
         "serve",
         "--root",
         "D:/path/to/agent-memory"
@@ -244,47 +244,49 @@ Example:
 }
 ```
 
-## Bench And Eval
+配置生成命令只输出片段，不会自动修改 Codex 或 Cursor 的全局配置。
 
-Latency check:
+## Benchmark 与 Eval
+
+延迟测试：
 
 ```powershell
-local-wiki bench --root . --query "local-wiki Product v1.2" --iterations 20
+local-wiki bench --root . --query "local-wiki Product v1.3" --iterations 20
 ```
 
-Evaluation fixture:
+自定义评测 fixture：
 
 ```json
 [
   {
-    "query": "Codex MCP local wiki",
+    "query": "Codex MCP 本地知识库",
     "expected": ["wiki/cursor/memory-wiki-system.md"],
     "top_k": 3
   }
 ]
 ```
 
-Run:
+运行质量门禁：
 
 ```powershell
 local-wiki eval --root . --fixture eval.json --summary --min-top1 0.85 --min-top5 0.97 --max-duplicate-rate 0.1
 ```
 
-`eval` reports top1/top3/top5/topK rates, per-category metrics, duplicate-path rate, empty results, average latency, and p50/p95 latency. It exits with code 3 when a configured threshold fails.
+`eval` 输出 top1/top3/top5/topK、分类指标、重复路径率、空结果、平均延迟和 p50/p95，并在阈值失败时以退出码 3 结束。
 
-The repository includes a sanitized, self-contained product corpus with two named query sets:
+仓库包含完全脱敏、自包含的产品语料：
 
 ```powershell
-# Product gate: 150 base and intent-noise queries.
+# 150 条基础查询和意图噪声查询，作为发布门禁
 npm run test:eval
 
-# Semantic challenge: 150 queries including paraphrases with different vocabulary.
+# 150 条包含不同词汇改写的语义挑战集
 npm run eval:semantic
 ```
 
-The semantic set is diagnostic rather than a release gate. It measures the gap that an optional local embedding provider may address in a later version. Private agent-memory integration fixtures live outside the standalone product repository.
+`semantic` 集合用于量化可选本地 embedding/reranker 能改善的空间，不作为当前词法检索版本的发布门禁。私有 agent-memory 集成 fixture 不进入产品仓库。
 
-## Distribution And Release Checks
+## 分发与发布检查
 
 ```powershell
 npm run ci
@@ -292,24 +294,28 @@ npm run test:soak
 npm run soak:watch
 ```
 
-`test:pack` creates and installs a real `.tgz` in an isolated consumer project, then runs init, config validation, indexing, and smoke checks. `test:soak` is the short CI mutation test; `soak:watch` defaults to 12 hours. See [RELEASING.md](RELEASING.md) for remote metadata, npm provenance, tagging, and rollback gates.
+- `test:pack` 会生成真实 `.tgz`，安装到全新临时项目，再执行 init、配置校验、索引和 smoke。
+- `test:soak` 是短时 CI 变更测试。
+- `soak:watch` 默认运行 12 小时。
+- 发布流程、远程元数据、npm provenance、标签和回滚要求见 [RELEASING.md](RELEASING.md)。
 
-## Migration From qmd
+## 从 qmd 迁移
 
-See [MIGRATION_FROM_QMD.md](MIGRATION_FROM_QMD.md). The short version:
+详见 [MIGRATION_FROM_QMD.md](MIGRATION_FROM_QMD.md)。简要对应关系：
 
-- Use `local-wiki index` instead of embedding generation.
-- Use `local-wiki sync` after wiki edits.
-- Use `.local-wiki.json` instead of qmd collections.
-- Keep prompts and rules on `search_wiki`, `grep_wiki`, `read_wiki`, and `status_wiki`.
+- embedding 构建改为 `local-wiki index`。
+- 日常更新改为 `local-wiki sync`。
+- collection 改为知识库根目录和 `.local-wiki.json`。
+- Prompt 和规则继续使用 `search_wiki`、`grep_wiki`、`read_wiki`、`status_wiki`。
 
-## Troubleshooting And Security
+## 排障与安全
 
-- Troubleshooting: [TROUBLESHOOTING.md](TROUBLESHOOTING.md)
-- Security notes: [SECURITY.md](SECURITY.md)
+- 排障说明：[TROUBLESHOOTING.md](TROUBLESHOOTING.md)
+- 安全说明：[SECURITY.md](SECURITY.md)
+- 贡献指南：[CONTRIBUTING.md](CONTRIBUTING.md)
 
-Run an audit after changing rules or docs:
+修改规则或文档后运行：
 
 ```powershell
-node tools/local-wiki-mcp/src/cli.js audit --root .
+local-wiki audit --root .
 ```

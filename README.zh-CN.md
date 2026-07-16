@@ -1,5 +1,7 @@
 # local-wiki-mcp
 
+> 中文主文档已经统一到 [README.md](README.md)。本文件保留为旧链接兼容和简版快速指南。
+
 `local-wiki-mcp` 是面向 Codex、Cursor 和其他 MCP 客户端的本地 Markdown 知识库检索工具。它只依赖 Node.js 20+，不需要外接大模型 API key、向量数据库、Python 或原生依赖。
 
 ## 核心能力

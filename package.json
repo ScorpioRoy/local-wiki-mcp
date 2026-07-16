@@ -41,6 +41,7 @@
   "files": [
     "src/",
     "README.md",
+    "README.en.md",
     "README.zh-CN.md",
     "CHANGELOG.md",
     "LICENSE",
@@ -55,7 +56,6 @@
     "access": "public",
     "provenance": true
   },
-  {
   "repository": {
     "type": "git",
     "url": "https://github.com/ScorpioRoy/local-wiki-mcp.git"
@@ -64,5 +64,4 @@
   "bugs": {
     "url": "https://github.com/ScorpioRoy/local-wiki-mcp/issues"
   }
-}
 }

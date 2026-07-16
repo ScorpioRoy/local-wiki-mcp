@@ -1,4 +1,4 @@
-name: Watch soak
+name: Watch 耐久性测试
 
 on:
   schedule:
@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       duration_ms:
-        description: Soak duration in milliseconds
+        description: 耐久性测试时长（毫秒）
         required: true
         default: "3600000"
 

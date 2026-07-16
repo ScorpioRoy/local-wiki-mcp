@@ -1,0 +1,11 @@
+---
+description: local-wiki-mcp 中文主文档与双语产物规则
+alwaysApply: true
+---
+
+# 中文主文档规则（HARD GATE）
+
+- 与用户沟通、版本计划、发布说明、维护指南、Issue/PR 模板默认使用中文。
+- `README.md` 为中文主文档；英文内容维护在 `README.en.md`。
+- 命令、代码标识符、MCP 字段、配置键、路径和错误原文保持英文。
+- 测试语料和英文检索 fixture 可保留英文，但不得将其当作用户主文档。

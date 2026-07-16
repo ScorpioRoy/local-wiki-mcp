@@ -1,95 +1,99 @@
-# Troubleshooting
+# 排障指南
 
-## Codex Fails To Start After Editing `config.toml`
+## 修改 `config.toml` 后 Codex 无法启动
 
-Use single quotes or forward slashes in Windows paths:
+Windows 路径使用 TOML 单引号或正斜杠：
 
 ```toml
 [mcp_servers.local_wiki]
 command = 'node'
-args = ['D:/path/to/agent-memory/tools/local-wiki-mcp/src/cli.js', 'serve', '--root', 'D:/path/to/agent-memory']
+args = ['D:/path/to/local-wiki-mcp/src/cli.js', 'serve', '--root', 'D:/path/to/agent-memory']
 ```
 
-Generate a fresh snippet instead of hand-editing:
+优先生成配置片段，不要手工拼接：
 
 ```powershell
 local-wiki config codex --root D:\path\to\agent-memory
 ```
 
-Validate the knowledge-base config independently, even when malformed JSON prevents other commands from loading:
+即使 JSON 已损坏，也可以单独校验知识库配置：
 
 ```powershell
 local-wiki config validate --root D:\path\to\agent-memory
 ```
 
-## Search Results Are Missing New Wiki Content
-
-Run:
+## 新增知识搜不到
 
 ```powershell
 local-wiki status --root D:\path\to\agent-memory
 local-wiki sync --root D:\path\to\agent-memory
 ```
 
-If `search_wiki` returns a stale warning, `sync` is the normal fix.
+`search_wiki` 返回 stale warning 时，正常处理方式是运行 `sync`。
 
-For automatic refresh, run `local-wiki watch --root <ROOT>` or explicitly use `serve --watch`.
+需要自动刷新时，运行 `local-wiki watch --root <ROOT>`，或者显式使用 `serve --watch`。
 
-## The Index Is Missing Or Corrupt
-
-Run:
+## 索引缺失或损坏
 
 ```powershell
 local-wiki repair --root D:\path\to\agent-memory
-local-wiki doctor --root D:\path\to\agent-memory
+local-wiki doctor --root D:\path\to\agent-memory --verbose
 ```
 
-Use `--force` when you want a full rebuild.
+需要完整重建时增加 `--force`。
 
-Index v2 is still readable. Running `local-wiki sync` upgrades it to compact index v3.
+索引 v2 仍可读取；运行 `local-wiki sync` 会升级为紧凑 index v3。
 
-## Another Index Operation Is Running
+## 提示已有索引操作运行
 
-`index`, `sync`, `repair`, and watch updates use `.local-wiki-index/index.lock`. Wait for the active operation to finish. Locks older than ten minutes are treated as stale and recovered automatically.
+`index`、`sync`、`repair` 和 watch 更新使用 `.local-wiki-index/index.lock`。等待当前操作结束。超过十分钟的锁会被视为 stale lock 并自动恢复。
 
-## Chinese Text Looks Wrong In PowerShell
+## PowerShell 中文显示异常
 
-First verify whether the file itself is broken or only the terminal rendering is wrong:
+先区分文件损坏和终端显示问题：
 
 ```powershell
 local-wiki audit --root D:\path\to\agent-memory
 ```
 
-If the audit reports mojibake, fix the Markdown source and run `local-wiki sync`.
+audit 报告 mojibake 时，修复 Markdown 源文件并运行 `local-wiki sync`。audit 无异常时，不要只根据 PowerShell 显示覆盖文件。
 
-## Evaluation Quality Is Too Low
+## 评测质量偏低
 
-Create a small fixture:
+创建小型 fixture：
 
 ```json
 [
-  { "query": "Codex MCP local wiki", "expected": ["wiki/cursor/memory-wiki-system.md"], "top_k": 3 }
+  {
+    "query": "Codex MCP 本地知识库",
+    "expected": ["wiki/cursor/memory-wiki-system.md"],
+    "top_k": 3
+  }
 ]
 ```
 
-Then run:
+运行：
 
 ```powershell
-local-wiki eval --root D:\path\to\agent-memory --fixture eval.json
+local-wiki eval --root D:\path\to\agent-memory --fixture eval.json --summary
 ```
 
-Add release gates when the fixture is representative:
+代表性足够后增加发布门禁：
 
 ```powershell
-local-wiki eval --root D:\path\to\agent-memory --fixture eval.json --min-top1 0.8 --min-top5 0.95 --max-duplicate-rate 0.1
+local-wiki eval --root D:\path\to\agent-memory --fixture eval.json --summary --min-top1 0.8 --min-top5 0.95 --max-duplicate-rate 0.1
 ```
 
-Tune `.local-wiki.json` `searchWeights`, improve headings, and keep important concepts in stable wiki pages rather than only in daily notes.
+调整 `.local-wiki.json` 的 `searchWeights`、改善标题，并把重要概念维护在稳定 Wiki 页面而不是只写 daily。
 
-Inspect one ranking decision without changing data:
+排名异常时查看具体证据：
 
 ```powershell
 local-wiki explain "your query" --root D:\path\to\agent-memory --top-k 5
 ```
 
-Use `--variant-set semantic --summary` with the repository fixture to quantify paraphrase recall separately from the normal lexical product gate.
+使用仓库脱敏 fixture 的 `--variant-set semantic` 可以把语义改写召回与普通词法门禁分开测量。
+
+## npm 缓存出现 EPERM
+
+受限 Windows 环境可能无法写用户 npm cache。仓库的 `test:pack` 使用受控临时目录和隔离缓存；手工命令可通过 `--cache <可写目录>` 指定缓存。

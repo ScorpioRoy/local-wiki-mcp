@@ -1,22 +1,22 @@
-name: Feature request
-description: Propose a compatible product improvement
+name: 功能建议
+description: 提议兼容的产品增强
 title: "[Feature] "
 labels: [enhancement]
 body:
   - type: textarea
     id: use-case
     attributes:
-      label: Use case
-      description: Describe the workflow or retrieval gap, not only the desired implementation.
+      label: 使用场景
+      description: 请描述工作流或检索缺口，不要只描述期望实现。
     validations:
       required: true
   - type: textarea
     id: constraints
     attributes:
-      label: Constraints
-      description: Note privacy, offline, platform, performance, or compatibility requirements.
+      label: 约束条件
+      description: 说明隐私、离线、平台、性能或兼容性要求。
   - type: textarea
     id: evidence
     attributes:
-      label: Evidence
-      description: Include sanitized eval or benchmark data when relevant.
+      label: 证据
+      description: 相关时请提供脱敏 eval 或 benchmark 数据。

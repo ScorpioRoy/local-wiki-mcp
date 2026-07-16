@@ -1,39 +1,39 @@
-# Changelog
+# 变更日志
 
 ## 0.4.0 - 2026-07-15
 
-- Added `version`, `config validate`, `doctor --verbose`, `status --metrics`, and `explain` product commands.
-- Added strict config diagnostics for malformed JSON, invalid values, unknown fields, missing includes, and root-boundary violations.
-- Added clean `.tgz` installation verification with an isolated npm cache and an installed-package smoke test.
-- Added release readiness checks, Changelog-based release notes, reviewed rollback plans, and npm provenance workflow scaffolding.
-- Expanded CI to Windows, macOS, and Linux on Node.js 20, 22, and 24.
-- Added short CI and 12-hour local watch soak modes with mutation, strict-freshness, and retrieval checks.
-- Added UTF-8/editor policies, placeholder-safe MCP examples, release documentation, and a Chinese README.
-- Expanded the product evaluation suite to 150 query variants with category-level metrics.
-- Separated private integration fixtures from a sanitized self-contained product corpus and enforced root-bound index directories.
+- 新增 `version`、`config validate`、`doctor --verbose`、`status --metrics` 和 `explain` 产品命令。
+- 增加严格配置诊断，覆盖非法 JSON、错误类型、未知字段、缺失 include 和根目录边界违规。
+- 增加真实 `.tgz` 安装验证、隔离 npm 缓存和安装后 smoke test。
+- 增加发布就绪检查、基于 Changelog 的 release notes、人工审核回滚计划和 npm provenance 工作流。
+- 配置 Windows、macOS、Linux 与 Node.js 20、22、24 的 CI 矩阵。
+- 增加短时 CI soak 和默认 12 小时 watch soak，验证连续变更、严格新鲜度和最终检索。
+- 增加 UTF-8/editor 约束、占位符安全配置示例、中英文文档和正式发布说明。
+- 产品评测扩展到 150 条 query，并增加分类指标、意图门禁和语义挑战集。
+- 将私有集成 fixture 与脱敏自包含产品语料分离，并强制索引目录留在知识库根目录内。
 
 ## 0.3.0 - 2026-07-15
 
-- Added compact index v3 with `tokenCount`, precomputed vector norms, logical validation, and v2 rebuild migration.
-- Reduced search work by iterating query n-grams and added an MCP in-memory index/freshness cache.
-- Added default path-diverse results and configurable `max_chunks_per_path`/`diversity` options.
-- Added fast mtime/size incremental sync with reuse of unchanged search features.
-- Added index-operation locking, symlink skipping, overlapping-include deduplication, and strict freshness checks.
-- Added `watch`, opt-in `serve --watch`, `smoke`, and `init --template minimal|agent-memory`.
-- Expanded eval reporting and added 50-query quality thresholds.
-- Added Windows, macOS, and Linux CI coverage.
+- 索引升级为紧凑 v3，增加 `tokenCount`、预计算 vector norm、逻辑校验和 v2 重建迁移。
+- 查询改为遍历 query n-gram，并增加 MCP 内存索引和 freshness cache。
+- 默认结果按路径去重，并支持 `max_chunks_per_path` 和 `diversity`。
+- 增加 mtime/size 增量快路径，复用未修改文件的检索特征。
+- 增加索引操作锁、符号链接跳过、重叠 include 去重和严格新鲜度检查。
+- 增加 `watch`、显式 `serve --watch`、`smoke` 和 `init --template minimal|agent-memory`。
+- 评测扩展到 50 条 query，并增加质量阈值。
+- 增加 Windows、macOS 和 Linux CI 配置。
 
 ## 0.2.0 - 2026-07-07
 
-- Added `.local-wiki.json` configuration for includes, excludes, index directory, chunk size, and search boost weights.
-- Added true incremental `sync` that reuses unchanged chunks and refreshes only added or changed files.
-- Added `bench` and `eval` commands for latency checks and retrieval quality fixtures.
-- Added stale-index warnings to `search_wiki` MCP responses.
-- Added product release metadata, troubleshooting, migration, and security documentation.
+- 增加 `.local-wiki.json`，支持 include、exclude、索引目录、chunk 大小和检索权重。
+- 增加真正增量的 `sync`，复用未修改 chunk，只刷新新增或变化文件。
+- 增加 `bench` 和 `eval`，用于延迟和检索质量检查。
+- `search_wiki` MCP 响应增加索引过期警告。
+- 增加发布元数据、排障、迁移和安全文档。
 
 ## 0.1.0 - 2026-07-06
 
-- Added local JSON indexing for Markdown, text, and HTML files.
-- Added hybrid BM25-like, n-gram, exact, title, and path search.
-- Added read-only MCP tools: `search_wiki`, `grep_wiki`, `read_wiki`, and `status_wiki`.
-- Added `init`, `doctor`, `repair`, `config`, and `audit` product commands.
+- 增加 Markdown、文本和 HTML 的本地 JSON 索引。
+- 增加 BM25 风格、n-gram、精确短语、标题和路径混合检索。
+- 增加只读 MCP 工具：`search_wiki`、`grep_wiki`、`read_wiki`、`status_wiki`。
+- 增加 `init`、`doctor`、`repair`、`config` 和 `audit` 产品命令。

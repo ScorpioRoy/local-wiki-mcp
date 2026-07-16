@@ -1,4 +1,4 @@
-name: local-wiki-mcp CI
+name: 持续集成
 
 on:
   push:

@@ -1,10 +1,10 @@
-# Releasing local-wiki-mcp
+# local-wiki-mcp 发布说明
 
-This repository is the source of truth for the `local-wiki-mcp` package. Knowledge-base templates and agent-memory installations should consume a tagged package or a packed `.tgz`; they should not maintain a second copy of the source.
+本仓库是 `local-wiki-mcp` 包的唯一源码维护源。知识库模板和 agent-memory 应消费带标签的包或经过审核的 `.tgz`，不要在每个知识库中复制并维护第二份源码。
 
-## Local Readiness
+## 本地发布就绪检查
 
-Run on Node.js 20, 22, or 24:
+在 Node.js 20、22 或 24 下运行：
 
 ```powershell
 npm ci --ignore-scripts
@@ -13,39 +13,43 @@ npm run test:soak
 npm run release:check
 ```
 
-`test:pack` creates a real tarball, installs it in a clean temporary project, initializes a knowledge base, builds an index, and runs `smoke`. The short soak mutates a temporary wiki and verifies strict freshness. `npm run soak:watch` defaults to 12 hours for a release-candidate machine.
+`test:pack` 会生成真实 tarball，安装到全新临时项目，再执行知识库初始化、配置校验、索引和 smoke。`test:soak` 是短时变更测试；`npm run soak:watch` 默认运行 12 小时。
 
-## Remote Prerequisites
+## GitHub 与 npm 前置条件
 
-Before public publication:
+公开发布前必须完成：
 
-1. Create the remote repository and set `origin`.
-2. Add real `repository`, `homepage`, and `bugs` URLs to `package.json`.
-3. Add a project security contact to `SECURITY.md`.
-4. Confirm the npm package name and ownership.
-5. Configure the `npm` GitHub environment and either trusted publishing or `NPM_TOKEN`.
+1. 配置真实 GitHub `origin`。
+2. 在 `package.json` 中配置真实 `repository`、`homepage`、`bugs` URL。
+3. 在 `SECURITY.md` 中配置私密安全报告入口。
+4. 确认 npm 包名和所有权。
+5. 配置 GitHub `npm` Environment，以及 trusted publishing 或 `NPM_TOKEN`。
 
-The strict command fails while any of these release boundaries are unresolved:
+严格门禁：
 
 ```powershell
 npm run release:check:publish
 ```
 
-## Version And Publish
+任何真实发布边界未满足时，该命令必须失败。
 
-1. Update `package.json`, `package-lock.json`, `src/version.js`, and `CHANGELOG.md` to the same version.
-2. Run the local readiness commands.
-3. Commit the release, create an annotated `vX.Y.Z` tag, and push the commit and tag.
-4. The release workflow tests Windows, macOS, and Linux on Node.js 20, 22, and 24 before publishing with npm provenance.
+## 版本与发布
 
-The workflow extracts GitHub release notes from the matching Changelog section.
+1. 同步更新 `package.json`、`package-lock.json`、`src/version.js` 和 `CHANGELOG.md`。
+2. 运行本地发布就绪检查。
+3. 提交 release commit。
+4. 先推送并确认 CI 通过。
+5. 创建带注释的 `vX.Y.Z` 标签并推送。
+6. release workflow 在 Windows、macOS、Linux 和 Node.js 20、22、24 验证后，以 npm provenance 发布。
 
-## Rollback
+GitHub release notes 从匹配版本的 Changelog 段落提取。
 
-Publication rollback is intentionally not automatic. Generate a reviewed command plan:
+## 回滚
+
+发布回滚不会自动执行。先生成待审核命令计划：
 
 ```powershell
 npm run release:rollback-plan -- --version 0.4.0 --previous 0.3.0
 ```
 
-The plan deprecates the failed version and moves the selected dist-tag back to a known-good version. It does not execute network commands or unpublish package history.
+计划会弃用失败版本，并把指定 dist-tag 移回已知可用版本。它不会自动执行网络命令，也不会删除 npm 历史版本。
