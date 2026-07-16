@@ -54,5 +54,15 @@
   "publishConfig": {
     "access": "public",
     "provenance": true
+  },
+  {
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ScorpioRoy/local-wiki-mcp.git"
+  },
+  "homepage": "https://github.com/ScorpioRoy/local-wiki-mcp#readme",
+  "bugs": {
+    "url": "https://github.com/ScorpioRoy/local-wiki-mcp/issues"
   }
+}
 }
