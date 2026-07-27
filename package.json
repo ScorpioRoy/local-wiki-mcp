@@ -19,7 +19,7 @@
     "local-wiki-mcp": "./src/cli.js"
   },
   "scripts": {
-    "test": "node --test test",
+    "test": "node --test",
     "test:eval": "node scripts/product-eval.js",
     "test:pack": "node scripts/verify-package.js",
     "test:soak": "node scripts/watch-soak.js --duration-ms 3000 --mutation-interval-ms 400 --watch-interval-ms 100",
