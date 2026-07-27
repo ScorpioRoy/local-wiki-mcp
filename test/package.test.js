@@ -6,11 +6,15 @@ test("package metadata is ready for product distribution", async () => {
   const pkg = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"));
 
   assert.equal(pkg.private, false);
-  assert.equal(pkg.version, "0.4.0");
+  assert.equal(pkg.version, "0.6.0");
+  assert.equal(pkg.scripts["bench:scale"], "node --expose-gc scripts/scale-bench.js");
   assert.equal(pkg.license, "MIT");
   assert.match(pkg.description, /local/i);
   assert.deepEqual(Object.keys(pkg.bin).sort(), ["local-wiki", "local-wiki-mcp"]);
   assert(pkg.files.includes("src/"));
+  assert(pkg.files.includes("scripts/install-windows-watch.ps1"));
+  assert(pkg.files.includes("scripts/local-wiki-watch.ps1"));
+  assert(pkg.files.includes("scripts/scale-bench.js"));
   assert(pkg.files.includes("README.md"));
   assert(pkg.files.includes("README.en.md"));
   assert(pkg.files.includes("README.zh-CN.md"));

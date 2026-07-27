@@ -14,6 +14,9 @@ export function createIndexStore(options = {}) {
   const now = options.now ?? Date.now;
   const reloadCheckTtlMs = nonNegative(options.reloadCheckTtlMs, 1000);
   const freshnessTtlMs = nonNegative(options.freshnessTtlMs, 5000);
+  const idleUnloadMs = nonNegative(options.idleUnloadMs, 300000);
+  const setTimer = options.setTimeout ?? setTimeout;
+  const clearTimer = options.clearTimeout ?? clearTimeout;
   const statIndex = options.statIndex ?? (() => stat(path.join(
     resolveIndexDirectory(root, indexDir),
     DEFAULT_INDEX_FILE,
@@ -31,10 +34,14 @@ export function createIndexStore(options = {}) {
   let lastReloadCheck = Number.NEGATIVE_INFINITY;
   let loading;
   let freshnessCache;
+  let idleTimer;
+  let lastAccessAt;
+  let unloadCount = 0;
 
   async function getIndex(getOptions = {}) {
     const currentTime = now();
     if (cachedIndex && !getOptions.force && currentTime - lastReloadCheck < reloadCheckTtlMs) {
+      touch(currentTime);
       return cachedIndex;
     }
 
@@ -42,6 +49,7 @@ export function createIndexStore(options = {}) {
     const signature = `${info.mtimeMs}:${info.size}`;
     lastReloadCheck = currentTime;
     if (cachedIndex && !getOptions.force && signature === cachedSignature) {
+      touch(currentTime);
       return cachedIndex;
     }
 
@@ -55,7 +63,9 @@ export function createIndexStore(options = {}) {
         loading = undefined;
       });
     }
-    return loading;
+    const index = await loading;
+    touch(now());
+    return index;
   }
 
   async function getFreshness(index, inspectOptions = {}) {
@@ -75,14 +85,38 @@ export function createIndexStore(options = {}) {
     return report;
   }
 
-  function invalidate() {
+  function invalidate(reason = "manual") {
+    if (idleTimer) clearTimer(idleTimer);
+    idleTimer = undefined;
     cachedIndex = undefined;
     cachedSignature = undefined;
     freshnessCache = undefined;
     lastReloadCheck = Number.NEGATIVE_INFINITY;
+    if (reason === "idle") unloadCount += 1;
   }
 
-  return { getIndex, getFreshness, invalidate };
+  function touch(currentTime) {
+    lastAccessAt = currentTime;
+    if (idleTimer) clearTimer(idleTimer);
+    idleTimer = undefined;
+    if (!idleUnloadMs) return;
+    idleTimer = setTimer(() => {
+      if (cachedIndex && now() - lastAccessAt >= idleUnloadMs) invalidate("idle");
+    }, idleUnloadMs);
+    idleTimer?.unref?.();
+  }
+
+  function getStats() {
+    return {
+      loaded: Boolean(cachedIndex),
+      loading: Boolean(loading),
+      idle_unload_ms: idleUnloadMs,
+      last_access_at: Number.isFinite(lastAccessAt) ? lastAccessAt : null,
+      unload_count: unloadCount,
+    };
+  }
+
+  return { getIndex, getFreshness, invalidate, getStats };
 }
 
 function nonNegative(value, fallback) {

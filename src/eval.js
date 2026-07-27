@@ -19,7 +19,7 @@ export async function runBench(options = {}) {
   let lastResults = [];
   for (let count = 0; count < iterations; count += 1) {
     const searchStart = performance.now();
-    lastResults = searchIndex(index, query, { topK, weights: options.weights });
+    lastResults = searchIndex(index, query, { topK, weights: options.weights, queryAliases: options.queryAliases });
     const elapsed = performance.now() - searchStart;
     searchTimes.push(elapsed);
     totalSearchMs += elapsed;
@@ -50,6 +50,7 @@ export function runEval(index, fixtures, options = {}) {
       weights: options.weights,
       diversity: options.diversity,
       maxChunksPerPath: options.maxChunksPerPath,
+      queryAliases: options.queryAliases,
     });
     searchTimes.push(performance.now() - searchStart);
     const paths = results.map((result) => result.path);
@@ -58,6 +59,12 @@ export function runEval(index, fixtures, options = {}) {
     const hitTop3 = paths.slice(0, 3).some((path) => expected.includes(path));
     const hitTop5 = paths.slice(0, 5).some((path) => expected.includes(path));
     const hitTopK = paths.slice(0, topK).some((path) => expected.includes(path));
+    const firstRelevantIndex = paths.findIndex((path) => expected.includes(path));
+    const reciprocalRank = firstRelevantIndex < 0 ? 0 : 1 / (firstRelevantIndex + 1);
+    const ndcg = normalizedDcg(paths.slice(0, topK), expected);
+    const resultTokens = approximateTokens(JSON.stringify(results.slice(0, topK)));
+    const topicDuplicates = countTopicDuplicates(results.slice(0, topK));
+    const lowConfidence = results[0]?.confidence?.level === "low";
 
     return {
       query: fixture.query,
@@ -71,6 +78,11 @@ export function runEval(index, fixtures, options = {}) {
       hit_top3: hitTop3,
       hit_top5: hitTop5,
       hit_topk: hitTopK,
+      reciprocal_rank: round(reciprocalRank),
+      ndcg: round(ndcg),
+      result_tokens: resultTokens,
+      topic_duplicates: topicDuplicates,
+      low_confidence: lowConfidence,
     };
   });
 
@@ -84,6 +96,8 @@ export function runEval(index, fixtures, options = {}) {
     totalDuplicates + entry.results.length - new Set(entry.results).size
   ), 0);
   const duplicatePathRate = resultPaths.length ? duplicateCount / resultPaths.length : 0;
+  const totalReturned = cases.reduce((sum, entry) => sum + entry.results.length, 0);
+  const topicDuplicateCount = cases.reduce((sum, entry) => sum + entry.topic_duplicates, 0);
   const rates = {
     top1: ratio(top1Hits, total),
     top3: ratio(top3Hits, total),
@@ -103,6 +117,11 @@ export function runEval(index, fixtures, options = {}) {
     topk_hits: topKHits,
     rates,
     duplicate_path_rate: round(duplicatePathRate),
+    topic_duplicate_rate: round(totalReturned ? topicDuplicateCount / totalReturned : 0),
+    mrr: round(cases.reduce((sum, entry) => sum + entry.reciprocal_rank, 0) / Math.max(1, total)),
+    ndcg: round(cases.reduce((sum, entry) => sum + entry.ndcg, 0) / Math.max(1, total)),
+    average_result_tokens: round(cases.reduce((sum, entry) => sum + entry.result_tokens, 0) / Math.max(1, total)),
+    low_confidence_rate: round(ratio(cases.filter((entry) => entry.low_confidence).length, total)),
     empty_results: cases.filter((entry) => entry.results.length === 0).length,
     search_ms: {
       average: round(searchTimes.reduce((sum, value) => sum + value, 0) / Math.max(1, searchTimes.length)),
@@ -114,6 +133,40 @@ export function runEval(index, fixtures, options = {}) {
     failures,
     cases,
   };
+}
+
+function normalizedDcg(paths, expected) {
+  const relevant = new Set(expected);
+  let dcg = 0;
+  for (let index = 0; index < paths.length; index += 1) {
+    if (relevant.has(paths[index])) dcg += 1 / Math.log2(index + 2);
+  }
+  const idealCount = Math.min(paths.length, relevant.size);
+  let ideal = 0;
+  for (let index = 0; index < idealCount; index += 1) ideal += 1 / Math.log2(index + 2);
+  return ideal ? dcg / ideal : 0;
+}
+
+function countTopicDuplicates(results) {
+  const topics = new Set();
+  let duplicates = 0;
+  for (const result of results) {
+    if (result.source_type !== "daily") continue;
+    const topic = String(result.heading ?? "")
+      .replace(/^任务\d+[:：]?\s*/, "")
+      .trim()
+      .toLowerCase();
+    if (!topic) continue;
+    if (topics.has(topic)) duplicates += 1;
+    topics.add(topic);
+  }
+  return duplicates;
+}
+
+function approximateTokens(value) {
+  const text = String(value ?? "");
+  const cjk = (text.match(/[\u3400-\u9fff]/g) ?? []).length;
+  return Math.max(1, Math.ceil(cjk + ((text.length - cjk) / 4)));
 }
 
 function normalizeFixtureDocument(value, requestedVariantSet) {

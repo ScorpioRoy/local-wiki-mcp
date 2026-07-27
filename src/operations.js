@@ -16,9 +16,9 @@ export async function buildKnowledgeBase(root, config) {
   });
 }
 
-export async function syncKnowledgeBase(root, config) {
+export async function syncKnowledgeBase(root, config, options = {}) {
   return withIndexLock(root, config.indexDir, async () => {
-    const previous = await tryLoadIndex(root, config.indexDir);
+    const previous = options.previousIndex ?? await tryLoadIndex(root, config.indexDir);
     const useIncremental = previous?.version === CURRENT_INDEX_VERSION;
     const index = useIncremental
       ? await syncIndexFromFiles(root, previous, config.includes, indexOptions(config))
@@ -29,9 +29,9 @@ export async function syncKnowledgeBase(root, config) {
 }
 
 export async function refreshKnowledgeBaseIfNeeded(root, config, options = {}) {
-  const index = await tryLoadIndex(root, config.indexDir);
+  const index = options.index ?? await tryLoadIndex(root, config.indexDir);
   if (!index || index.version !== CURRENT_INDEX_VERSION) {
-    return syncKnowledgeBase(root, config);
+    return syncKnowledgeBase(root, config, { previousIndex: index });
   }
   const freshness = await inspectIndexFreshness(root, index, config.includes, {
     exclude: config.exclude,
@@ -40,7 +40,7 @@ export async function refreshKnowledgeBaseIfNeeded(root, config, options = {}) {
   if (!freshness.stale) {
     return { ...result(false, "fresh", index), freshness };
   }
-  return { ...await syncKnowledgeBase(root, config), freshness };
+  return { ...await syncKnowledgeBase(root, config, { previousIndex: index }), freshness };
 }
 
 async function tryLoadIndex(root, indexDir) {

@@ -38,6 +38,44 @@ export function tokenize(value) {
   return unique(tokens.filter(Boolean));
 }
 
+export function rewriteQuery(value, aliases = {}) {
+  const raw = String(value ?? "");
+  const normalized = normalizeText(raw).trim();
+  const identifiers = [];
+  const terms = [];
+  const matchedAliases = [];
+
+  for (const match of raw.matchAll(/[A-Za-z][A-Za-z0-9._:/\\-]*/g)) {
+    const original = match[0];
+    const expanded = original
+      .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+      .replace(/([A-Z]+)([A-Z][a-z])/g, "$1 $2")
+      .replace(/([A-Za-z])(\d)/g, "$1 $2")
+      .replace(/(\d)([A-Za-z])/g, "$1 $2")
+      .split(/[._:/\\-]+|\s+/)
+      .map((part) => normalizeText(part).trim())
+      .filter((part) => part.length >= 2);
+    if (expanded.length > 1) identifiers.push({ original, terms: unique(expanded) });
+    terms.push(...expanded);
+  }
+
+  for (const [key, values] of Object.entries(aliases ?? {})) {
+    if (!normalized.includes(normalizeText(key))) continue;
+    const expanded = Array.isArray(values) ? values : [];
+    matchedAliases.push({ key, values: expanded });
+    for (const alias of expanded) {
+      terms.push(...tokenize(alias), ...rewriteQuery(alias).terms);
+    }
+  }
+
+  return {
+    normalized,
+    identifiers,
+    aliases: matchedAliases,
+    terms: unique(terms),
+  };
+}
+
 export function unique(values) {
   const seen = new Set();
   const result = [];

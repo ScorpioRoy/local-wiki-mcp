@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { CURRENT_INDEX_VERSION, buildIndex } from "../src/indexer.js";
-import { createMcpServer, createToolHandlers, listTools } from "../src/mcp.js";
+import { createMcpServer, createToolHandlers, handleMcpLine, listTools } from "../src/mcp.js";
 import { PRODUCT_VERSION } from "../src/version.js";
 
 const index = buildIndex([
@@ -32,6 +32,19 @@ test("MCP initialize reports the product version", async () => {
   assert.equal(response.result.serverInfo.version, PRODUCT_VERSION);
 });
 
+test("stdio line handling reports malformed JSON without throwing", async () => {
+  const server = createMcpServer({ loadIndex: async () => index });
+  const malformed = JSON.parse(await handleMcpLine(server, "not-json"));
+  const valid = JSON.parse(await handleMcpLine(server, JSON.stringify({
+    jsonrpc: "2.0",
+    id: 9,
+    method: "initialize",
+  })));
+
+  assert.equal(malformed.error.code, -32700);
+  assert.equal(valid.result.serverInfo.version, PRODUCT_VERSION);
+});
+
 test("MCP calls reject invalid required arguments", async () => {
   const server = createMcpServer({
     loadIndex: async () => index,
@@ -55,6 +68,54 @@ test("search_wiki returns MCP text content with JSON results", async () => {
 
   assert.equal(parsed.results.length, 1);
   assert.equal(parsed.results[0].path, "wiki/cursor/mcp.md");
+  assert.equal(parsed.confidence.level, parsed.results[0].confidence.level);
+  assert.equal(parsed.output_budget_tokens, 2000);
+});
+
+test("search_wiki supports adjacent context and token budget controls", async () => {
+  const contextualIndex = buildIndex([
+    { id: "wiki/context.md#1", path: "wiki/context.md", heading: "Before", text: "前置说明。" },
+    { id: "wiki/context.md#2", path: "wiki/context.md", heading: "Target", text: "RUNTIME_BUDGET_TARGET 配置。" },
+    { id: "wiki/context.md#3", path: "wiki/context.md", heading: "After", text: "后续验证。" },
+  ]);
+  const handlers = createToolHandlers({ loadIndex: async () => contextualIndex });
+  const response = await handlers.search_wiki({
+    query: "RUNTIME_BUDGET_TARGET",
+    context_chars: 200,
+    max_output_tokens: 500,
+    diversity: false,
+  });
+  const parsed = JSON.parse(response.content[0].text);
+
+  assert.match(parsed.results[0].context.before, /前置说明/);
+  assert.match(parsed.results[0].context.after, /后续验证/);
+  assert.equal(parsed.output_budget_tokens, 500);
+});
+
+test("search_wiki applies configured local reranking when requested", async () => {
+  const handlers = createToolHandlers({
+    loadIndex: async () => index,
+    reranker: {
+      provider: "ollama",
+      baseUrl: "http://127.0.0.1:11434",
+      model: "test-model",
+      candidateLimit: 2,
+      semanticWeight: 0.8,
+    },
+    rerankerFetch: async (_url, options) => {
+      const { input } = JSON.parse(options.body);
+      return {
+        ok: true,
+        json: async () => ({ embeddings: input.map(() => [1, 0]) }),
+      };
+    },
+  });
+  const response = await handlers.search_wiki({ query: "Codex MCP", top_k: 2, rerank: true });
+  const parsed = JSON.parse(response.content[0].text);
+
+  assert.equal(parsed.reranker.applied, true);
+  assert.equal(parsed.reranker.provider, "ollama");
+  assert(parsed.results.length >= 1 && parsed.results.length <= 2);
 });
 
 test("search_wiki includes a warning when the index is stale", async () => {

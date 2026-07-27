@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { loadIndex } from "../src/indexer.js";
 import { refreshKnowledgeBaseIfNeeded } from "../src/operations.js";
-import { startWatchLoop } from "../src/watcher.js";
+import { acquireWatchLock, startWatchLoop } from "../src/watcher.js";
 
 async function withTempDir(run) {
   const dir = await mkdtemp(path.join(tmpdir(), "local-wiki-watcher-"));
@@ -51,4 +51,43 @@ test("startWatchLoop exposes runNow and stops cleanly", async () => {
 
   assert.equal(runs, 1);
   assert.equal(watcher.closed, true);
+});
+
+test("acquireWatchLock prevents duplicate live watchers and releases", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "local-wiki-watch-lock-"));
+  try {
+    const first = await acquireWatchLock(root, ".index", {
+      pid: 1234,
+      isProcessAlive: (pid) => pid === 1234,
+    });
+    await assert.rejects(
+      acquireWatchLock(root, ".index", {
+        pid: 5678,
+        isProcessAlive: (pid) => pid === 1234,
+      }),
+      (error) => error.code === "WATCH_ALREADY_RUNNING" && error.owner.pid === 1234,
+    );
+    await first.release();
+    const second = await acquireWatchLock(root, ".index", {
+      pid: 5678,
+      isProcessAlive: () => false,
+    });
+    await second.release();
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("acquireWatchLock replaces an invalid stale lock", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "local-wiki-watch-stale-"));
+  try {
+    const directory = path.join(root, ".index");
+    await mkdir(directory, { recursive: true });
+    await writeFile(path.join(directory, "watch.lock"), "not json");
+    const lock = await acquireWatchLock(root, ".index", { pid: 42, isProcessAlive: () => false });
+    assert.equal(lock.pid, 42);
+    await lock.release();
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });

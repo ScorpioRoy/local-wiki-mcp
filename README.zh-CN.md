@@ -9,6 +9,10 @@
 - BM25 风格词项评分、字符 n-gram 余弦相似度、精确短语、标题和路径加权的混合检索。
 - 对中文知识、英文标识符、配置项、报错、文件路径和 API 名称都有稳定覆盖。
 - 紧凑 index v3、真正增量 `sync`、MCP 进程内缓存和默认路径去重。
+- `context` 紧凑启动上下文、单实例 watcher 和空闲索引卸载。
+- 默认关闭、仅限 loopback 且拒绝重定向的 Ollama 本地语义重排。
+- 无模型字段化排序、历史来源治理、置信度和默认 2000 token 结果预算。
+- 单实例共享 daemon、随机 token 鉴权和 daemon 故障时的直接检索回退。
 - 稳定的只读 MCP 工具：`search_wiki`、`grep_wiki`、`read_wiki`、`status_wiki`。
 - `doctor`、`repair`、`watch`、`bench`、`eval`、`smoke`、`audit` 等产品运维命令。
 
@@ -38,9 +42,30 @@ local-wiki watch --root D:\path\to\agent-memory
 
 默认 `serve` 只读；只有显式 `serve --watch` 才会自动写索引。
 
+推荐运行 `local-wiki daemon --root . --watch`，并让 Codex/Cursor 使用 `serve --daemon`。共享 runtime 不可用时会自动回退直接本地检索。
+
+全局安装后，可安装当前用户 Windows 启动项：
+
+```powershell
+$packageRoot = npm root -g
+powershell -File "$packageRoot\local-wiki-mcp\scripts\install-windows-watch.ps1" -Root D:\path\to\agent-memory
+```
+
 ## 配置与诊断
 
 配置文件位于知识库根目录的 `.local-wiki.json`。接入 AI 工具前建议运行：
+
+知识库存在稳定的领域同义词时，可使用确定性的 `queryAliases`，不需要模型或 API key：
+
+```json
+{
+  "queryAliases": {
+    "旧知识库": ["qmd", "local-wiki", "迁移"]
+  }
+}
+```
+
+alias 只在查询包含左侧短语时展开；建议用 eval 验证后再加入，避免配置过宽的通用词。
 
 ```powershell
 local-wiki config validate --root D:\path\to\agent-memory

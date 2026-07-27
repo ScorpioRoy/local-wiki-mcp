@@ -1,6 +1,6 @@
 {
   "name": "local-wiki-mcp",
-  "version": "0.4.0",
+  "version": "0.6.0",
   "description": "Local-first MCP search server for Markdown wiki knowledge bases, with no API keys or external services.",
   "private": false,
   "type": "module",
@@ -24,6 +24,7 @@
     "test:pack": "node scripts/verify-package.js",
     "test:soak": "node scripts/watch-soak.js --duration-ms 3000 --mutation-interval-ms 400 --watch-interval-ms 100",
     "eval:semantic": "node scripts/product-eval.js --variant-set semantic",
+    "bench:scale": "node --expose-gc scripts/scale-bench.js",
     "index": "node src/cli.js index",
     "serve": "node src/cli.js serve",
     "smoke": "node src/cli.js smoke",
@@ -40,6 +41,9 @@
   },
   "files": [
     "src/",
+    "scripts/install-windows-watch.ps1",
+    "scripts/local-wiki-watch.ps1",
+    "scripts/scale-bench.js",
     "README.md",
     "README.en.md",
     "README.zh-CN.md",

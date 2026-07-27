@@ -1,5 +1,6 @@
 import { createIndexStore } from "./index-store.js";
 import { grepIndex, readFromIndex, searchIndex } from "./search.js";
+import { rerankSearchResults } from "./reranker.js";
 import { PRODUCT_VERSION } from "./version.js";
 
 export function listTools() {
@@ -14,6 +15,10 @@ export function listTools() {
           top_k: { type: "number", description: "Maximum result count. Default 8." },
           max_chunks_per_path: { type: "number", description: "Maximum chunks returned from one file. Default 1." },
           diversity: { type: "boolean", description: "Keep path-diverse results. Default true." },
+          topic_diversity: { type: "boolean", description: "Collapse repeated daily topics. Default true." },
+          context_chars: { type: "number", description: "Adjacent context characters per result. Default 0." },
+          max_output_tokens: { type: "number", description: "Approximate result token budget. Default 2000." },
+          rerank: { type: "boolean", description: "Use the configured loopback local reranker. Default follows config." },
         },
         required: ["query"],
       },
@@ -65,10 +70,13 @@ export function createToolHandlers(options = {}) {
     exclude: options.exclude,
     reloadCheckTtlMs: options.reloadCheckTtlMs,
     freshnessTtlMs: options.freshnessTtlMs,
+    idleUnloadMs: options.idleUnloadMs,
   });
   const load = options.loadIndex ?? (() => store.getIndex());
   const inspect = options.inspectFreshness ?? ((index, inspectOptions) => store.getFreshness(index, inspectOptions));
   const weights = options.weights;
+  const queryAliases = options.queryAliases;
+  const rerankerConfig = options.reranker ?? { provider: "none" };
 
   return {
     async search_wiki(args) {
@@ -79,17 +87,38 @@ export function createToolHandlers(options = {}) {
         undefined,
         "max_chunks_per_path",
       );
+      const contextChars = optionalNonNegativeInteger(args.context_chars ?? args.contextChars, 0, "context_chars");
+      const maxOutputTokens = optionalPositiveInteger(
+        args.max_output_tokens ?? args.maxOutputTokens,
+        2000,
+        "max_output_tokens",
+      );
       const index = await load();
       const freshness = await inspect(index, { force: false });
-      const results = searchIndex(index, query, {
-        topK,
+      const rerankRequested = args.rerank ?? rerankerConfig.provider !== "none";
+      const lexicalResults = searchIndex(index, query, {
+        topK: rerankRequested ? Math.max(topK, rerankerConfig.candidateLimit ?? 20) : topK,
         maxChunksPerPath,
         diversity: args.diversity ?? true,
+        topicDiversity: args.topic_diversity ?? args.topicDiversity ?? true,
+        contextChars,
+        maxOutputTokens: rerankRequested ? undefined : maxOutputTokens,
         weights,
+        queryAliases,
       });
+      const reranked = rerankRequested
+        ? await rerankSearchResults(index, query, lexicalResults, rerankerConfig, {
+          topK,
+          fetch: options.rerankerFetch,
+        })
+        : { results: lexicalResults };
+      const { results, ...reranker } = reranked;
       return jsonContent({
         query,
         ...(freshness.stale ? { warning: staleWarning(freshness) } : {}),
+        ...(rerankRequested ? { reranker } : {}),
+        confidence: results[0]?.confidence ?? null,
+        output_budget_tokens: maxOutputTokens,
         results,
       });
     },
@@ -126,6 +155,7 @@ export function createToolHandlers(options = {}) {
         changed: freshness.changed,
         deleted: freshness.deleted,
         unchanged_count: freshness.unchanged.length,
+        ...(typeof store.getStats === "function" ? { cache: store.getStats() } : {}),
       });
     },
   };
@@ -142,7 +172,7 @@ function staleWarning(freshness) {
 }
 
 export function createMcpServer(options = {}) {
-  const handlers = createToolHandlers(options);
+  const handlers = options.handlers ?? createToolHandlers(options);
 
   return {
     async handle(message) {
@@ -194,13 +224,21 @@ export function startStdioServer(options = {}) {
 
     for (const line of lines) {
       if (!line.trim()) continue;
-      const message = JSON.parse(line);
-      const result = await server.handle(message);
-      if (result) {
-        process.stdout.write(`${JSON.stringify(result)}\n`);
-      }
+      const output = await handleMcpLine(server, line);
+      if (output) process.stdout.write(`${output}\n`);
     }
   });
+}
+
+export async function handleMcpLine(server, line) {
+  let message;
+  try {
+    message = JSON.parse(line);
+  } catch {
+    return JSON.stringify(errorResponse(null, -32700, "Parse error: expected one JSON-RPC object per line."));
+  }
+  const result = await server.handle(message);
+  return result ? JSON.stringify(result) : null;
 }
 
 function response(id, result) {
@@ -230,5 +268,11 @@ function requiredString(value, name) {
 function optionalPositiveInteger(value, fallback, name) {
   if (value === undefined || value === null) return fallback;
   if (!Number.isInteger(value) || value <= 0) throw new Error(`${name} must be a positive integer.`);
+  return value;
+}
+
+function optionalNonNegativeInteger(value, fallback, name) {
+  if (value === undefined || value === null) return fallback;
+  if (!Number.isInteger(value) || value < 0) throw new Error(`${name} must be a non-negative integer.`);
   return value;
 }

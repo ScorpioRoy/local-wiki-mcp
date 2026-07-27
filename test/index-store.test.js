@@ -62,3 +62,32 @@ test("index store caches freshness reports within the configured TTL", async () 
   assert.equal(forced.inspectCalls, 3);
   assert.equal(inspectCalls, 3);
 });
+
+test("index store unloads the parsed index after the configured idle period", async () => {
+  let now = 1000;
+  let timerCallback;
+  let loadCalls = 0;
+  const store = createIndexStore({
+    now: () => now,
+    idleUnloadMs: 500,
+    setTimeout: (callback) => {
+      timerCallback = callback;
+      return { unref() {} };
+    },
+    clearTimeout: () => {},
+    statIndex: async () => ({ mtimeMs: 10, size: 100 }),
+    loadIndex: async () => {
+      loadCalls += 1;
+      return { version: 3, createdAt: `load-${loadCalls}`, chunkCount: 0, chunks: [], documentFrequency: {} };
+    },
+  });
+
+  await store.getIndex();
+  assert.equal(store.getStats().loaded, true);
+  now += 500;
+  timerCallback();
+  assert.equal(store.getStats().loaded, false);
+  assert.equal(store.getStats().unload_count, 1);
+  await store.getIndex();
+  assert.equal(loadCalls, 2);
+});

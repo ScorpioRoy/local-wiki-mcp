@@ -31,7 +31,7 @@ local-wiki sync --root D:\path\to\agent-memory
 
 `search_wiki` 返回 stale warning 时，正常处理方式是运行 `sync`。
 
-需要自动刷新时，运行 `local-wiki watch --root <ROOT>`，或者显式使用 `serve --watch`。
+需要自动刷新时，推荐独立运行一个 `local-wiki watch --root <ROOT>`。多个 `serve --watch` 会通过 `watch.lock` 复用同一个 writer。
 
 ## 索引缺失或损坏
 
@@ -47,6 +47,22 @@ local-wiki doctor --root D:\path\to\agent-memory --verbose
 ## 提示已有索引操作运行
 
 `index`、`sync`、`repair` 和 watch 更新使用 `.local-wiki-index/index.lock`。等待当前操作结束。超过十分钟的锁会被视为 stale lock 并自动恢复。
+
+## 提示已有 watcher 运行
+
+`.local-wiki-index/watch.lock` 记录当前 watcher PID。进程仍存在时不要删除该锁；PID 已失效时，新 watcher 会自动恢复。运行 `doctor --verbose` 可查看 watch lock 状态。
+
+## Shared runtime 不可用或进入 fallback
+
+运行 `local-wiki runtime status --root <ROOT>` 查看 `active` 与 `reachable`。`serve --daemon` 默认会在 daemon 缺失或超时时回退直接索引，并在 MCP 响应中返回 `runtime.mode=fallback`。重新运行 `local-wiki daemon --root <ROOT> --watch` 可恢复共享模式；失效状态文件和锁由新 runtime 自动清理。不要把 `.local-wiki-index/runtime.json` 上传或写入日志，其中包含本地认证 token。
+
+## `doctor --fix` 的边界
+
+`doctor --fix` 只重建缺失、损坏、旧版或过期的派生索引，不修改 Markdown、Codex/Cursor 配置或系统启动项。配置 JSON 无效、根目录不可访问等问题仍需人工处理。
+
+## 本地语义重排没有生效
+
+先确认 `.local-wiki.json` 的 `reranker.provider` 为 `ollama`，并在本机准备对应模型。`baseUrl` 必须是 loopback 地址。搜索响应中的 `reranker.warning` 表示已安全回退到词法结果，不会导致搜索失败。
 
 ## PowerShell 中文显示异常
 
@@ -84,7 +100,7 @@ local-wiki eval --root D:\path\to\agent-memory --fixture eval.json --summary
 local-wiki eval --root D:\path\to\agent-memory --fixture eval.json --summary --min-top1 0.8 --min-top5 0.95 --max-duplicate-rate 0.1
 ```
 
-调整 `.local-wiki.json` 的 `searchWeights`、改善标题，并把重要概念维护在稳定 Wiki 页面而不是只写 daily。
+先改善标题，并把重要概念维护在稳定 Wiki 页面而不是只写 daily。稳定的领域同义词可写入 `.local-wiki.json` 的 `queryAliases`；alias 只在查询包含配置键时展开，并提供独立 `bm25_alias` 与 `path_alias` 证据。配置后应重跑基础与语义 eval，避免过宽 alias 引入误召回。只有在评测证明有必要时再调整全局 `searchWeights`。
 
 排名异常时查看具体证据：
 

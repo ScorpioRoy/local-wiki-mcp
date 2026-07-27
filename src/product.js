@@ -15,6 +15,7 @@ import {
 } from "./indexer.js";
 import { listTools } from "./mcp.js";
 import { searchIndex } from "./search.js";
+import { inspectRuntime } from "./runtime.js";
 import { PRODUCT_VERSION } from "./version.js";
 
 const DEFAULT_INCLUDES = ["wiki", "MEMORY.md"];
@@ -35,25 +36,42 @@ export async function initKnowledgeBase(root, options = {}) {
         exact: 3,
         title: 1.5,
         path: 1,
+        identifier: 1.25,
+        source: 0.75,
       },
+      queryAliases: {},
       mcpCache: {
         reloadCheckTtlMs: 1000,
         freshnessTtlMs: 5000,
+        idleUnloadMs: 300000,
+      },
+      reranker: {
+        provider: "none",
+        baseUrl: "http://127.0.0.1:11434",
+        model: "nomic-embed-text",
+        timeoutMs: 5000,
+        candidateLimit: 20,
+        semanticWeight: 0.35,
+      },
+      runtime: {
+        mode: "off",
+        timeoutMs: 1500,
+        requestLimitBytes: 1048576,
       },
       watch: {
         intervalMs: 2000,
         strictEvery: 30,
       },
     }, null, 2)}\n`],
-    ["MEMORY.md", "# Local Wiki Memory\n\nUse this file as the short startup summary for this knowledge base.\n"],
-    ["wiki/index.md", "# Wiki Index\n\n| Page | Summary | Updated |\n|------|---------|---------|\n"],
-    ["wiki/log.md", "# Wiki Log\n\nRecord durable wiki updates here.\n"],
+    ["MEMORY.md", "# 知识库热启动摘要\n\n只保留短小、稳定的项目入口和协作约定。\n"],
+    ["wiki/index.md", "# Wiki 内容索引\n\n| 页面 | 摘要 | 更新时间 |\n|------|------|----------|\n"],
+    ["wiki/log.md", "# Wiki 变更日志\n\n记录稳定知识的新增和更新。\n"],
   ];
   const agentMemoryEntries = [
-    ["README.md", "# Local Wiki Knowledge Base\n\nThis directory stores Markdown knowledge for local-wiki-mcp.\n"],
-    ["SCHEMA.md", "# Maintenance Schema\n\nKeep durable knowledge in wiki/ and recent work notes in daily/.\n"],
-    ["daily/README.md", "# Daily Notes\n\nUse daily notes for recent work context.\n"],
-    ["raw/README.md", "# Raw Sources\n\nStore sanitized source material here before turning it into wiki pages.\n"],
+    ["README.md", "# Local Wiki 知识库\n\n本目录保存供 local-wiki-mcp 检索的 Markdown 知识。\n"],
+    ["SCHEMA.md", "# 维护规范\n\n稳定知识写入 wiki/，近期工作记录写入 daily/。\n"],
+    ["daily/README.md", "# Daily 工作记录\n\n使用 daily 保存近期任务上下文。\n"],
+    ["raw/README.md", "# 原始资料\n\n只保存已脱敏资料，并在整理后沉淀到 wiki。\n"],
   ];
   const entries = template === "minimal" ? baseEntries : [...baseEntries, ...agentMemoryEntries];
 
@@ -79,7 +97,14 @@ export function generateConfig(kind, options = {}) {
   const root = toForwardSlashes(path.resolve(options.root ?? process.cwd()));
   const command = options.command ?? "node";
   const cliPath = toForwardSlashes(options.cliPath ?? defaultCliPath());
-  const args = [cliPath, "serve", "--root", root, ...(options.watch ? ["--watch"] : [])];
+  const args = [
+    cliPath,
+    "serve",
+    "--root",
+    root,
+    ...(options.watch ? ["--watch"] : []),
+    ...(options.daemon ? ["--daemon"] : []),
+  ];
 
   if (kind === "codex") {
     return {
@@ -299,7 +324,10 @@ function defaultCliPath() {
 async function collectDoctorDiagnostics(rootPath, indexDir, configReport) {
   const resolvedIndexDir = resolveIndexDirectory(rootPath, indexDir ?? DEFAULT_INDEX_DIR);
   const lockFile = path.join(resolvedIndexDir, "index.lock");
+  const watchLockFile = path.join(resolvedIndexDir, "watch.lock");
   const lockInfo = await stat(lockFile).catch(() => null);
+  const watchLockInfo = await stat(watchLockFile).catch(() => null);
+  const watchOwner = watchLockInfo ? await readJsonOptional(watchLockFile) : null;
   let metrics = null;
   let metricsError = null;
   try {
@@ -313,6 +341,9 @@ async function collectDoctorDiagnostics(rootPath, indexDir, configReport) {
       executable: process.execPath,
       cwd: process.cwd(),
     },
+    shared_runtime: await inspectRuntime(rootPath, indexDir, {
+      timeoutMs: configReport.config?.runtime?.timeoutMs,
+    }),
     config: configReport.config,
     index_dir: resolvedIndexDir,
     index_metrics: metrics,
@@ -325,7 +356,24 @@ async function collectDoctorDiagnostics(rootPath, indexDir, configReport) {
       active: false,
       file: lockFile,
     },
+    watch_lock: watchLockInfo ? {
+      active: true,
+      file: watchLockFile,
+      pid: watchOwner?.pid ?? null,
+      age_ms: Math.max(0, Date.now() - watchLockInfo.mtimeMs),
+    } : {
+      active: false,
+      file: watchLockFile,
+    },
   };
+}
+
+async function readJsonOptional(file) {
+  try {
+    return JSON.parse(await readFile(file, "utf8"));
+  } catch {
+    return null;
+  }
 }
 
 async function exists(file) {

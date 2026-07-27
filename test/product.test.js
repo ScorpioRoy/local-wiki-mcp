@@ -32,11 +32,14 @@ test("initKnowledgeBase creates a minimal skeleton without overwriting files", a
     assert.equal(result.created.includes("wiki/index.md"), true);
     assert.equal(result.skipped.includes("MEMORY.md"), true);
     assert.match(await readFile(path.join(root, "MEMORY.md"), "utf8"), /Keep me/);
-    assert.match(await readFile(path.join(root, "wiki", "index.md"), "utf8"), /Wiki Index/);
-    assert.match(await readFile(path.join(root, "daily", "README.md"), "utf8"), /Daily Notes/);
+    assert.match(await readFile(path.join(root, "wiki", "index.md"), "utf8"), /Wiki 内容索引/);
+    assert.match(await readFile(path.join(root, "daily", "README.md"), "utf8"), /Daily 工作记录/);
     const config = JSON.parse(await readFile(path.join(root, ".local-wiki.json"), "utf8"));
     assert.deepEqual(config.includes, ["wiki", "MEMORY.md"]);
     assert.equal(config.indexDir, ".local-wiki-index");
+    assert.equal(config.mcpCache.idleUnloadMs, 300000);
+    assert.equal(config.reranker.provider, "none");
+    assert.equal(config.runtime.mode, "off");
   });
 });
 
@@ -59,6 +62,14 @@ test("generateConfig returns safe Codex and Cursor snippets", async () => {
       watch: true,
     });
     assert.match(watched.text, /'--watch'/);
+
+    const daemon = generateConfig("cursor", {
+      root,
+      command: "node",
+      cliPath: "D:/tools/local-wiki/src/cli.js",
+      daemon: true,
+    });
+    assert(JSON.parse(daemon.text).mcpServers["local-wiki"].args.includes("--daemon"));
 
     const quoted = generateConfig("codex", {
       root: path.join(root, "team's wiki"),
@@ -160,5 +171,6 @@ test("version, verbose doctor, and index metrics expose product diagnostics", as
     assert.equal(doctor.checks.config.status, "ok");
     assert.equal(doctor.checks.index.freshness_mode, "strict");
     assert.equal(doctor.diagnostics.index_metrics.chunk_count, index.chunkCount);
+    assert.equal(doctor.diagnostics.watch_lock.active, false);
   });
 });

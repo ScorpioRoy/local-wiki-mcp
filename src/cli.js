@@ -2,8 +2,10 @@
 import process from "node:process";
 import { readFile } from "node:fs/promises";
 import { auditWorkspace } from "./audit.js";
+import { buildStartupContext } from "./context.js";
 import { CURRENT_INDEX_VERSION, inspectIndexFreshness, loadIndex } from "./indexer.js";
 import { explainSearch, grepIndex, readFromIndex, searchIndex } from "./search.js";
+import { rerankSearchResults } from "./reranker.js";
 import { startStdioServer } from "./mcp.js";
 import {
   collectIndexMetrics,
@@ -17,7 +19,14 @@ import {
 import { DEFAULT_CONFIG, loadConfig, mergeCliOptions, validateConfigFile } from "./config.js";
 import { runBench, runEval } from "./eval.js";
 import { buildKnowledgeBase, syncKnowledgeBase } from "./operations.js";
-import { watchKnowledgeBase } from "./watcher.js";
+import { startExclusiveWatcher } from "./watcher.js";
+import {
+  createRuntimeBridgeHandlers,
+  inspectRuntime,
+  startRuntimeServer,
+  stopRuntime,
+  runWindowsRuntimeInstaller,
+} from "./runtime.js";
 
 async function main(argv = process.argv.slice(2)) {
   const command = argv[0] ?? "help";
@@ -47,7 +56,7 @@ async function main(argv = process.argv.slice(2)) {
   if (command === "doctor") {
     const configReport = await validateConfigFile(root);
     const config = mergeCliOptions(configReport.config ?? DEFAULT_CONFIG, args);
-    const report = await runDoctor(root, {
+    let report = await runDoctor(root, {
       includes: config.includes,
       indexDir: config.indexDir,
       exclude: config.exclude,
@@ -55,6 +64,26 @@ async function main(argv = process.argv.slice(2)) {
       verbose: args.verbose === true,
       strict: args.strict === true,
     });
+    if (args.fix && configReport.ok && report.checks.root.status === "ok" && report.checks.index.status !== "ok") {
+      const repair = await repairIndex(root, {
+        indexDir: config.indexDir,
+        force: true,
+        includes: config.includes,
+        exclude: config.exclude,
+        maxChunkChars: config.maxChunkChars,
+      });
+      report = await runDoctor(root, {
+        includes: config.includes,
+        indexDir: config.indexDir,
+        exclude: config.exclude,
+        configReport,
+        verbose: args.verbose === true,
+        strict: args.strict === true,
+      });
+      report.fixes = [{ action: "repair_index", result: repair }];
+    } else if (args.fix) {
+      report.fixes = [];
+    }
     printJson(report);
     if (!report.ok) process.exitCode = 2;
     return;
@@ -62,6 +91,27 @@ async function main(argv = process.argv.slice(2)) {
 
   const config = mergeCliOptions(await loadConfig(root), args);
   const indexDir = config.indexDir;
+
+  if (command === "runtime") {
+    const action = args.positionals[0] ?? "status";
+    if (action === "status") {
+      printJson(await inspectRuntime(root, indexDir, { timeoutMs: config.runtime.timeoutMs }));
+      return;
+    }
+    if (action === "stop") {
+      printJson(await stopRuntime(root, indexDir));
+      return;
+    }
+    if (action === "install") {
+      printJson(runWindowsRuntimeInstaller(root, { noStart: args.noStart }));
+      return;
+    }
+    if (action === "uninstall") {
+      printJson(runWindowsRuntimeInstaller(root, { uninstall: true }));
+      return;
+    }
+    throw new Error(`Unknown runtime action: ${action}`);
+  }
 
   if (command === "init") {
     printJson(await initKnowledgeBase(root, { template: args.template }));
@@ -82,7 +132,7 @@ async function main(argv = process.argv.slice(2)) {
   if (command === "config") {
     const kind = args.positionals[0];
     requireValue(kind, "config requires a target: codex, cursor, or validate");
-    process.stdout.write(generateConfig(kind, { root, watch: args.watch }).text);
+    process.stdout.write(generateConfig(kind, { root, watch: args.watch, daemon: args.daemon }).text);
     return;
   }
 
@@ -98,17 +148,40 @@ async function main(argv = process.argv.slice(2)) {
     return;
   }
 
+  if (command === "context") {
+    const report = await buildStartupContext(root, {
+      days: args.days,
+      maxTasks: args.maxTasks,
+      maxChars: args.maxChars,
+    });
+    if (args.json) printJson(report);
+    else process.stdout.write(report.text);
+    return;
+  }
+
   if (command === "search") {
     const query = args.positionals.join(" ").trim();
     requireValue(query, "search requires a query");
     const index = await loadIndex(root, indexDir);
-    const results = searchIndex(index, query, {
-      topK: args.topK ?? 8,
+    const topK = args.topK ?? 8;
+    const rerankRequested = args.rerank ?? config.reranker.provider !== "none";
+    const lexicalResults = searchIndex(index, query, {
+      topK: rerankRequested ? Math.max(topK, config.reranker.candidateLimit) : topK,
       maxChunksPerPath: args.maxChunksPerPath,
       diversity: args.diversity,
+      topicDiversity: args.topicDiversity,
+      contextChars: args.contextChars,
+      maxOutputTokens: args.maxOutputTokens,
       weights: config.searchWeights,
+      queryAliases: config.queryAliases,
     });
-    printJson({ query, results });
+    if (!rerankRequested) {
+      printJson({ query, results: lexicalResults });
+      return;
+    }
+    const reranked = await rerankSearchResults(index, query, lexicalResults, config.reranker, { topK });
+    const { results, ...reranker } = reranked;
+    printJson({ query, reranker, results });
     return;
   }
 
@@ -121,6 +194,7 @@ async function main(argv = process.argv.slice(2)) {
       maxChunksPerPath: args.maxChunksPerPath,
       diversity: args.diversity,
       weights: config.searchWeights,
+      queryAliases: config.queryAliases,
     }));
     return;
   }
@@ -185,6 +259,7 @@ async function main(argv = process.argv.slice(2)) {
       topK: args.topK ?? 8,
       iterations: args.iterations ?? 5,
       weights: config.searchWeights,
+      queryAliases: config.queryAliases,
       loadIndex: () => loadIndex(root, indexDir),
     });
     printJson(report);
@@ -205,6 +280,7 @@ async function main(argv = process.argv.slice(2)) {
       minTop5: args.minTop5,
       maxDuplicateRate: args.maxDuplicateRate,
       variantSet: args.variantSet,
+      queryAliases: config.queryAliases,
     });
     if (args.summary) delete report.cases;
     printJson(report);
@@ -225,26 +301,55 @@ async function main(argv = process.argv.slice(2)) {
   }
 
   if (command === "watch") {
-    const watcher = startConfiguredWatcher(root, config, args, console.log);
+    const watcher = await startConfiguredWatcher(root, config, args, console.log);
     console.log(`Watching ${root} every ${args.intervalMs ?? config.watch.intervalMs}ms. Press Ctrl+C to stop.`);
     installWatchShutdown(watcher);
     return;
   }
 
+  if (command === "daemon") {
+    const runtime = await startRuntimeServer({
+      ...directServerOptions(root, config),
+      config,
+      mcpCache: config.mcpCache,
+      watch: args.watch,
+      port: args.port,
+      requestLimitBytes: config.runtime.requestLimitBytes,
+      watchOptions: {
+        intervalMs: args.intervalMs ?? config.watch.intervalMs,
+        strictEvery: config.watch.strictEvery,
+        runImmediately: true,
+        onResult: (report) => {
+          if (report.updated) console.log(`local-wiki runtime watch: ${report.mode}, ${report.chunk_count} chunks`);
+        },
+        onError: (error) => console.error(`local-wiki runtime watch: ${error.message}`),
+      },
+    });
+    printJson(runtime.state);
+    installRuntimeShutdown(runtime);
+    return;
+  }
+
   if (command === "serve") {
     if (args.watch) {
-      const watcher = startConfiguredWatcher(root, config, args, console.error);
-      installWatchShutdown(watcher);
+      try {
+        const watcher = await startConfiguredWatcher(root, config, args, console.error);
+        installWatchShutdown(watcher);
+      } catch (error) {
+        if (error.code !== "WATCH_ALREADY_RUNNING") throw error;
+        console.error(`local-wiki watch: reusing existing watcher pid ${error.owner?.pid}`);
+      }
     }
-    startStdioServer({
-      root,
-      indexDir,
-      includes: config.includes,
-      exclude: config.exclude,
-      weights: config.searchWeights,
-      reloadCheckTtlMs: config.mcpCache.reloadCheckTtlMs,
-      freshnessTtlMs: config.mcpCache.freshnessTtlMs,
+    const serverOptions = directServerOptions(root, config);
+    const runtimeMode = args.daemon
+      ? (args.noFallback ? "required" : "auto")
+      : config.runtime.mode;
+    const handlers = runtimeMode === "off" ? undefined : createRuntimeBridgeHandlers({
+      ...serverOptions,
+      mode: runtimeMode,
+      timeoutMs: config.runtime.timeoutMs,
     });
+    startStdioServer({ ...serverOptions, handlers });
     return;
   }
 
@@ -272,6 +377,14 @@ function parseArgs(argv) {
       args.topK = positiveInteger(argv[++index], "--top-k");
     } else if (value === "--max-chars") {
       args.maxChars = positiveInteger(argv[++index], "--max-chars");
+    } else if (value === "--context-chars") {
+      args.contextChars = nonNegativeInteger(argv[++index], "--context-chars");
+    } else if (value === "--max-output-tokens") {
+      args.maxOutputTokens = positiveInteger(argv[++index], "--max-output-tokens");
+    } else if (value === "--days") {
+      args.days = positiveInteger(argv[++index], "--days");
+    } else if (value === "--max-tasks") {
+      args.maxTasks = positiveInteger(argv[++index], "--max-tasks");
     } else if (value === "--max-chunks-per-path") {
       args.maxChunksPerPath = positiveInteger(argv[++index], "--max-chunks-per-path");
     } else if (value === "--query") {
@@ -282,6 +395,8 @@ function parseArgs(argv) {
       args.iterations = positiveInteger(argv[++index], "--iterations");
     } else if (value === "--interval-ms") {
       args.intervalMs = positiveInteger(argv[++index], "--interval-ms");
+    } else if (value === "--port") {
+      args.port = nonNegativeInteger(argv[++index], "--port");
     } else if (value === "--min-top1") {
       args.minTop1 = rateValue(argv[++index], "--min-top1");
     } else if (value === "--min-top3") {
@@ -298,6 +413,14 @@ function parseArgs(argv) {
       args.diversity = false;
     } else if (value === "--diversity") {
       args.diversity = true;
+    } else if (value === "--no-topic-diversity") {
+      args.topicDiversity = false;
+    } else if (value === "--topic-diversity") {
+      args.topicDiversity = true;
+    } else if (value === "--rerank") {
+      args.rerank = true;
+    } else if (value === "--no-rerank") {
+      args.rerank = false;
     } else if (value === "--strict") {
       args.strict = true;
     } else if (value === "--verbose") {
@@ -310,10 +433,18 @@ function parseArgs(argv) {
       args.summary = true;
     } else if (value === "--watch") {
       args.watch = true;
+    } else if (value === "--daemon") {
+      args.daemon = true;
+    } else if (value === "--no-fallback") {
+      args.noFallback = true;
+    } else if (value === "--no-start") {
+      args.noStart = true;
     } else if (value === "--help" || value === "-h") {
       args.help = true;
     } else if (value === "--force") {
       args.force = true;
+    } else if (value === "--fix") {
+      args.fix = true;
     } else if (value.startsWith("-")) {
       throw new Error(`Unknown option: ${value}`);
     } else {
@@ -348,8 +479,14 @@ function rateValue(value, name) {
   return number;
 }
 
+function nonNegativeInteger(value, name) {
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 0) throw new Error(`${name} must be a non-negative integer`);
+  return parsed;
+}
+
 function startConfiguredWatcher(root, config, args, log) {
-  return watchKnowledgeBase(root, config, {
+  return startExclusiveWatcher(root, config, {
     intervalMs: args.intervalMs ?? config.watch.intervalMs,
     strictEvery: config.watch.strictEvery,
     runImmediately: true,
@@ -363,10 +500,32 @@ function startConfiguredWatcher(root, config, args, log) {
 function installWatchShutdown(watcher) {
   for (const signal of ["SIGINT", "SIGTERM"]) {
     process.once(signal, () => {
-      watcher.close();
-      process.exit(0);
+      Promise.resolve(watcher.close()).finally(() => process.exit(0));
     });
   }
+}
+
+function installRuntimeShutdown(runtime) {
+  for (const signal of ["SIGINT", "SIGTERM"]) {
+    process.once(signal, () => {
+      Promise.resolve(runtime.close()).finally(() => process.exit(0));
+    });
+  }
+}
+
+function directServerOptions(root, config) {
+  return {
+    root,
+    indexDir: config.indexDir,
+    includes: config.includes,
+    exclude: config.exclude,
+    weights: config.searchWeights,
+    queryAliases: config.queryAliases,
+    reranker: config.reranker,
+    reloadCheckTtlMs: config.mcpCache.reloadCheckTtlMs,
+    freshnessTtlMs: config.mcpCache.freshnessTtlMs,
+    idleUnloadMs: config.mcpCache.idleUnloadMs,
+  };
 }
 
 function printHelp() {
@@ -376,14 +535,17 @@ Commands:
   version [--json]                         Show product and runtime versions
   init   [--root DIR] [--template NAME]   Create an agent-memory or minimal skeleton
   index  [--root DIR] [--include PATH]    Build the local JSON index
-  search <query> [--root DIR]             Hybrid BM25 + n-gram search
+  search <query> [--root DIR] [--rerank]  Deterministic field-aware hybrid search
+         [--context-chars N] [--max-output-tokens N]
   explain <query> [--root DIR]            Explain query analysis and result scores
   grep   <pattern> [--root DIR]           Exact substring search
   read   <path-or-id> [--root DIR]        Read indexed chunks
   status [--root DIR] [--strict]          Show index metadata and freshness
          [--metrics]                      Include index size and density metrics
   sync   [--root DIR] [--include PATH]    Refresh the local JSON index
-  doctor [--root DIR] [--verbose]         Diagnose runtime, config, index, and MCP health
+  context [--root DIR] [--days N]         Print compact startup memory context
+          [--max-tasks N] [--max-chars N]
+  doctor [--root DIR] [--verbose] [--fix] Diagnose and repair derived index state
   repair [--root DIR] [--force]           Rebuild a missing, corrupt, or stale index
   config codex|cursor [--root DIR]        Print MCP configuration snippets
   config validate [--root DIR]            Validate .local-wiki.json and source paths
@@ -393,7 +555,10 @@ Commands:
          [--variant-set NAME] [--summary] Select fixture variants and omit case details
   smoke  [--root DIR]                     Verify index and MCP search readiness
   watch  [--root DIR] [--interval-ms N]   Auto-sync changed knowledge files
-  serve  [--root DIR] [--watch]           Start MCP stdio server
+  daemon [--root DIR] [--watch]           Start shared loopback search runtime
+  runtime status|stop [--root DIR]        Inspect or stop the shared runtime
+  runtime install|uninstall [--root DIR]  Manage Windows current-user Startup
+  serve  [--root DIR] [--daemon]          Start MCP stdio server with optional bridge
 
 Defaults:
   --include wiki --include MEMORY.md

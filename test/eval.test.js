@@ -30,12 +30,19 @@ test("runEval counts top1 and topK path hits", () => {
   assert.equal(report.top5_hits, 1);
   assert.equal(report.topk_hits, 1);
   assert.equal(report.duplicate_path_rate, 0);
+  assert.equal(typeof report.topic_duplicate_rate, "number");
+  assert.equal(typeof report.mrr, "number");
+  assert.equal(typeof report.ndcg, "number");
+  assert.equal(typeof report.average_result_tokens, "number");
+  assert.equal(typeof report.low_confidence_rate, "number");
   assert.equal(report.empty_results, 0);
   assert.equal(typeof report.search_ms.average, "number");
   assert.equal(typeof report.search_ms.p50, "number");
   assert.equal(typeof report.search_ms.p95, "number");
   assert.equal(report.cases.length, 2);
   assert.equal(report.cases[0].hit_top1, true);
+  assert.equal(report.cases[0].reciprocal_rank, 1);
+  assert.equal(report.cases[0].ndcg, 1);
 });
 
 test("runEval expands query variants and reports category metrics", () => {

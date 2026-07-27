@@ -176,7 +176,7 @@ test("cli supports minimal init smoke and numeric validation", async () => {
   });
 });
 
-test("cli exposes v1.3 version, validation, metrics, verbose doctor, and explain commands", async () => {
+test("cli exposes version, validation, metrics, verbose doctor, and explain commands", async () => {
   await withTempDir(async (root) => {
     await writeFile(path.join(root, ".local-wiki.json"), JSON.stringify({ includes: ["wiki"] }));
 
@@ -197,6 +197,18 @@ test("cli exposes v1.3 version, validation, metrics, verbose doctor, and explain
     const explainReport = JSON.parse(explanation.stdout);
     assert.equal(explainReport.query, "Codex MCP");
     assert(explainReport.returned_count > 0);
+  });
+});
+
+test("doctor --fix rebuilds a missing derived index", async () => {
+  await withTempDir(async (root) => {
+    await execFileAsync("node", [cliPath, "init", "--root", root, "--template", "minimal"]);
+    const fixed = await execFileAsync("node", [cliPath, "doctor", "--root", root, "--fix"]);
+    const report = JSON.parse(fixed.stdout);
+
+    assert.equal(report.ok, true);
+    assert.equal(report.checks.index.status, "ok");
+    assert.equal(report.fixes[0].action, "repair_index");
   });
 });
 

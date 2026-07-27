@@ -26,6 +26,9 @@ try {
   const installedPackage = JSON.parse(await readFile(path.join(installedRoot, "package.json"), "utf8"));
   await access(path.join(installedRoot, "README.md"));
   await access(path.join(installedRoot, "README.zh-CN.md"));
+  await access(path.join(installedRoot, "scripts", "install-windows-watch.ps1"));
+  await access(path.join(installedRoot, "scripts", "local-wiki-watch.ps1"));
+  await access(path.join(installedRoot, "scripts", "scale-bench.js"));
 
   const version = JSON.parse(runNode([cli, "version", "--json"], consumer));
   JSON.parse(runNode([cli, "init", "--root", knowledgeBase, "--template", "minimal"], consumer));
@@ -47,7 +50,7 @@ try {
     smoke_chunk_count: smoke.checks.index.chunk_count,
   }, null, 2));
 } finally {
-  await rm(temporaryRoot, { recursive: true, force: true });
+  await rm(temporaryRoot, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
 }
 
 function runNode(args, cwd) {

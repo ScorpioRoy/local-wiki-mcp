@@ -2,7 +2,7 @@
 
 ## search_wiki
 
-`search_wiki` accepts `query`, `top_k`, `max_chunks_per_path`, and `diversity`. It returns path-diverse ranked snippets and an index-stale warning when source files changed.
+`search_wiki` accepts `query`, `top_k`, `max_chunks_per_path`, `diversity`, `topic_diversity`, `context_chars`, and `max_output_tokens`. It returns path-diverse ranked snippets, confidence, a bounded token response, optional adjacent context, and an index-stale warning when source files changed.
 
 ## grep_wiki
 
@@ -19,3 +19,7 @@
 ## Read-Only Serve Mode
 
 Plain `local-wiki serve` exposes four read-only tools and never refreshes the index. Automatic writes require explicit `serve --watch`; MCP tool names remain stable across versions.
+
+## Shared Runtime Bridge
+
+`local-wiki daemon --watch` starts one authenticated loopback runtime that shares IndexStore and the watcher. `local-wiki serve --daemon` is a lightweight stdio bridge. A random token in the private runtime state file protects tool calls; remote hosts and redirects are rejected. If the daemon is missing or unhealthy, auto mode falls back to direct local index access.

@@ -6,7 +6,8 @@
         "<LOCAL_WIKI_PACKAGE>/src/cli.js",
         "serve",
         "--root",
-        "<MEMORY_ROOT>"
+        "<MEMORY_ROOT>",
+        "--daemon"
       ]
     }
   }

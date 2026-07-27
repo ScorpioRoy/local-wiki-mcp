@@ -15,6 +15,10 @@ It is designed for `agent-memory` style LLM wiki systems:
 - Path-diverse results by default, with configurable per-file chunk limits.
 - Config validation, verbose diagnostics, index metrics, and score explanations for product operation.
 - Clean package-install verification, release gates, and watch soak tooling for team distribution.
+- Compact `context` startup output, a single-instance watcher, and idle MCP index unloading.
+- Deterministic field-aware ranking, identifier rewriting, source tiers, daily recency, confidence, and token budgets.
+- A single authenticated loopback daemon with lightweight MCP bridges and direct-search fallback.
+- Optional loopback-only Ollama embedding reranking with lexical fallback.
 
 ## Requirements
 
@@ -65,11 +69,30 @@ Create `.local-wiki.json` in the knowledge-base root:
   "searchWeights": {
     "exact": 3,
     "title": 1.5,
-    "path": 1
+    "path": 1,
+    "identifier": 1.25,
+    "source": 0.75
+  },
+  "queryAliases": {
+    "legacy knowledge base": ["qmd", "local-wiki", "migration"]
   },
   "mcpCache": {
     "reloadCheckTtlMs": 1000,
-    "freshnessTtlMs": 5000
+    "freshnessTtlMs": 5000,
+    "idleUnloadMs": 300000
+  },
+  "runtime": {
+    "mode": "off",
+    "timeoutMs": 1500,
+    "requestLimitBytes": 1048576
+  },
+  "reranker": {
+    "provider": "none",
+    "baseUrl": "http://127.0.0.1:11434",
+    "model": "nomic-embed-text",
+    "timeoutMs": 5000,
+    "candidateLimit": 20,
+    "semanticWeight": 0.35
   },
   "watch": {
     "intervalMs": 2000,
@@ -85,6 +108,8 @@ node tools/local-wiki-mcp/src/cli.js index --root . --include wiki --index-dir .
 ```
 
 Default includes are `wiki` and `MEMORY.md`. Built-in skipped directories include `.git`, `.state`, `.local-wiki-index`, and `node_modules`.
+
+Use `queryAliases` for stable, knowledge-base-specific synonyms. An alias expands only when the query contains its key, contributes independent BM25 and path evidence, and never calls a model. Keep aliases narrow and verify them with eval fixtures.
 
 Validate values and source paths before starting MCP:
 
@@ -103,7 +128,8 @@ version [--json]                         Show product and runtime versions
 init    [--root DIR] [--template NAME]   Create an agent-memory or minimal skeleton
 index   [--root DIR] [--include PATH]    Full rebuild of the local JSON index
 sync    [--root DIR] [--include PATH]    Incrementally refresh the local JSON index
-search  <query> [--root DIR]             Hybrid search with path diversity
+context [--root DIR] [--days N]          Print compact startup context
+search  <query> [--root DIR] [--rerank]  Hybrid search with optional local reranking
 explain <query> [--root DIR]             Explain query parsing and score evidence
 grep    <pattern> [--root DIR]           Exact substring search
 read    <path-or-id> [--root DIR]        Read indexed chunks
@@ -121,7 +147,7 @@ audit   [--root DIR]                     Check mojibake and legacy qmd rules
 serve   [--root DIR] [--watch]           Start the MCP stdio server
 ```
 
-Use `explain` when a result ranks unexpectedly. It reports normalized query tokens, trigram counts, active weights, BM25/vector/boost components, matched terms, and diversity filtering without changing the index.
+Use `explain` when a result ranks unexpectedly. It reports normalized query tokens, query rewrites, aliases, trigram counts, active weights, BM25/vector/boost components, matched terms, and diversity filtering without changing the index.
 
 ## MCP Tools
 
@@ -180,12 +206,20 @@ Returns index version, creation time, chunk count, indexed includes, and stale-s
 
 Set `strict: true` to hash all source files. Normal searches use a short freshness cache to avoid rescanning the knowledge base on every MCP call.
 
+## Compact Startup Context
+
+```powershell
+local-wiki context --root . --days 3 --max-tasks 12 --max-chars 8000
+```
+
+`context` mechanically combines `MEMORY.md` with recent daily task headings, project fields, and pending work. It does not call a model or rewrite source Markdown. Read full daily or wiki pages only when the task needs them.
+
 ## Automatic Refresh
 
 Run a separate watcher:
 
 ```powershell
-local-wiki watch --root . --interval-ms 2000
+local-wiki watch --root . --interval-ms 5000
 ```
 
 Or opt in while serving MCP:
@@ -194,7 +228,18 @@ Or opt in while serving MCP:
 local-wiki serve --root . --watch
 ```
 
-The default `serve` command remains read-only. Watch mode uses atomic writes, an index-operation lock, fast mtime/size checks, and a periodic strict hash pass.
+For production, run `local-wiki daemon --root . --watch` once and configure Codex/Cursor with `serve --daemon`. The daemon binds only to loopback, authenticates with a random local state token, and enforces a 1MB request limit. Bridges fall back to direct local index access when the daemon is unavailable. On Windows after a global install, add the packaged runtime to the current-user Startup folder:
+
+```powershell
+$packageRoot = npm root -g
+powershell -File "$packageRoot\local-wiki-mcp\scripts\install-windows-watch.ps1" -Root D:\path\to\agent-memory
+```
+
+Add `-Uninstall` to remove the shortcut or `-NoStart` to install it without starting immediately. Logs rotate at 5MB under `.state/local-wiki-runtime.log`.
+
+## Optional Local Semantic Reranking
+
+Set `reranker.provider` to `ollama` to rerank lexical candidates through one local `/api/embed` batch. Only loopback hosts are accepted, and HTTP redirects are rejected. Timeouts, missing models, and invalid responses return a warning and preserve lexical results. Ollama and models are never installed automatically.
 
 ## Codex Configuration
 
@@ -249,7 +294,7 @@ Example:
 Latency check:
 
 ```powershell
-local-wiki bench --root . --query "local-wiki Product v1.2" --iterations 20
+local-wiki bench --root . --query "local-wiki Product v1.4" --iterations 20
 ```
 
 Evaluation fixture:
@@ -282,7 +327,7 @@ npm run test:eval
 npm run eval:semantic
 ```
 
-The semantic set is diagnostic rather than a release gate. It measures the gap that an optional local embedding provider may address in a later version. Private agent-memory integration fixtures live outside the standalone product repository.
+The semantic set remains diagnostic. Version 0.5.0 can optionally rerank lexical candidates through a loopback Ollama embedding model. Private agent-memory integration fixtures live outside the standalone product repository.
 
 ## Distribution And Release Checks
 
@@ -290,6 +335,7 @@ The semantic set is diagnostic rather than a release gate. It measures the gap t
 npm run ci
 npm run test:soak
 npm run soak:watch
+npm run bench:scale
 ```
 
 `test:pack` creates and installs a real `.tgz` in an isolated consumer project, then runs init, config validation, indexing, and smoke checks. `test:soak` is the short CI mutation test; `soak:watch` defaults to 12 hours. See [RELEASING.md](RELEASING.md) for remote metadata, npm provenance, tagging, and rollback gates.

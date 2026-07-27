@@ -62,6 +62,12 @@
     { "query": "Beacon rotateBeaconKeyset seven days", "variants": ["fictional key rotation procedure and interval", "Beacon local signing material schedule"], "expected": ["wiki/guides/long-document.md"], "category": "long-document", "top_k": 5 },
     { "query": "Cedar CEDAR_SCHEMA_12 migration backup", "variants": ["fictional note metadata upgrade id", "Cedar schema rewrite safety step"], "expected": ["wiki/guides/long-document.md"], "category": "long-document", "top_k": 5 },
     { "query": "Delta delta-recovery.json checkpoint hashes", "variants": ["recover the fictional Delta local snapshot", "file storing the last consistent recovery point"], "expected": ["wiki/guides/long-document.md"], "category": "long-document", "top_k": 5 },
-    { "query": "Ember ember-audit.log sanitized events result codes", "variants": ["fictional audit trail without document bodies", "Ember operation timestamp log"], "expected": ["wiki/guides/long-document.md"], "category": "long-document", "top_k": 5 }
+    { "query": "Ember ember-audit.log sanitized events result codes", "variants": ["fictional audit trail without document bodies", "Ember operation timestamp log"], "expected": ["wiki/guides/long-document.md"], "category": "long-document", "top_k": 5 },
+
+    { "query": "ReminderConfigService camelCase deterministic query rewrite", "variants": ["split structured identifiers without a model", "field-aware identifier expansion"], "expected": ["wiki/product/overview.md"], "category": "hard-negative", "top_k": 5 },
+    { "query": "stable wiki old daily time decay supersededBy", "variants": ["prefer durable knowledge over obsolete task history", "lifecycle ranking for archived notes"], "expected": ["wiki/product/overview.md"], "category": "hard-negative", "top_k": 5 },
+    { "query": "context_chars max_output_tokens confidence topic_diversity", "variants": ["bounded MCP context with repeated topic collapse", "control result tokens and adjacent chunks"], "expected": ["wiki/product/mcp.md"], "category": "hard-negative", "top_k": 5 },
+    { "query": "daemon loopback random token bridge direct fallback", "variants": ["shared IndexStore without a single point of failure", "authenticated local search runtime"], "expected": ["wiki/product/mcp.md"], "category": "hard-negative", "top_k": 5 },
+    { "query": "runtime install uninstall log rotation doctor fix", "variants": ["manage Windows Startup and repair derived index", "shared runtime operational commands"], "expected": ["wiki/product/commands.md"], "category": "hard-negative", "top_k": 5 }
   ]
 }

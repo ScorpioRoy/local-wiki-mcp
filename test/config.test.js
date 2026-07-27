@@ -29,6 +29,10 @@ test("loadConfig returns defaults when config file is missing", async () => {
     assert.equal(config.searchWeights.exact, 3);
     assert.equal(config.mcpCache.reloadCheckTtlMs, 1000);
     assert.equal(config.mcpCache.freshnessTtlMs, 5000);
+    assert.equal(config.mcpCache.idleUnloadMs, 300000);
+    assert.equal(config.reranker.provider, "none");
+    assert.equal(config.reranker.baseUrl, "http://127.0.0.1:11434");
+    assert.equal(config.reranker.semanticWeight, 0.35);
     assert.equal(config.watch.intervalMs, 2000);
     assert.equal(config.watch.strictEvery, 30);
   });
@@ -42,7 +46,15 @@ test("loadConfig reads .local-wiki.json and normalizes arrays", async () => {
       exclude: ["secret"],
       maxChunkChars: 1200,
       searchWeights: { exact: 4, title: 2, path: 1.25 },
-      mcpCache: { reloadCheckTtlMs: 250, freshnessTtlMs: 1500 },
+      mcpCache: { reloadCheckTtlMs: 250, freshnessTtlMs: 1500, idleUnloadMs: 60000 },
+      reranker: {
+        provider: "ollama",
+        baseUrl: "http://localhost:11434",
+        model: "bge-m3",
+        timeoutMs: 2500,
+        candidateLimit: 12,
+        semanticWeight: 0.5,
+      },
       watch: { intervalMs: 750, strictEvery: 10 },
     }));
 
@@ -57,6 +69,10 @@ test("loadConfig reads .local-wiki.json and normalizes arrays", async () => {
     assert.equal(config.searchWeights.path, 1.25);
     assert.equal(config.mcpCache.reloadCheckTtlMs, 250);
     assert.equal(config.mcpCache.freshnessTtlMs, 1500);
+    assert.equal(config.mcpCache.idleUnloadMs, 60000);
+    assert.equal(config.reranker.provider, "ollama");
+    assert.equal(config.reranker.model, "bge-m3");
+    assert.equal(config.reranker.candidateLimit, 12);
     assert.equal(config.watch.intervalMs, 750);
     assert.equal(config.watch.strictEvery, 10);
   });
@@ -97,6 +113,49 @@ test("validateConfigValue reports invalid values and unknown fields", () => {
   assert(report.errors.some((entry) => entry.path === "$.searchWeights.exact"));
   assert(report.warnings.some((entry) => entry.path === "$.unknown"));
   assert(report.warnings.some((entry) => entry.path === "$.searchWeights.typo"));
+});
+
+test("validateConfigValue rejects remote or malformed reranker settings", () => {
+  const report = validateConfigValue({
+    reranker: {
+      provider: "ollama",
+      baseUrl: "https://example.com",
+      model: "",
+      timeoutMs: 0,
+      candidateLimit: 1.5,
+      semanticWeight: 2,
+    },
+  });
+
+  assert.equal(report.ok, false);
+  assert(report.errors.some((entry) => entry.path === "$.reranker.baseUrl"));
+  assert(report.errors.some((entry) => entry.path === "$.reranker.model"));
+  assert(report.errors.some((entry) => entry.path === "$.reranker.timeoutMs"));
+  assert(report.errors.some((entry) => entry.path === "$.reranker.candidateLimit"));
+  assert(report.errors.some((entry) => entry.path === "$.reranker.semanticWeight"));
+});
+
+test("validateConfigValue validates shared runtime settings", () => {
+  const invalid = validateConfigValue({
+    runtime: { mode: "remote", timeoutMs: 0, requestLimitBytes: 10 },
+  });
+  const valid = validateConfigValue({
+    runtime: { mode: "auto", timeoutMs: 1000, requestLimitBytes: 1048576 },
+  });
+
+  assert.equal(invalid.ok, false);
+  assert(invalid.errors.some((entry) => entry.path === "$.runtime.mode"));
+  assert.equal(valid.ok, true);
+  assert.equal(valid.config.runtime.mode, "auto");
+});
+
+test("validateConfigValue validates query alias dictionaries", () => {
+  const invalid = validateConfigValue({ queryAliases: { legacy: "qmd" } });
+  const valid = validateConfigValue({ queryAliases: { legacy: ["qmd", "local-wiki"] } });
+
+  assert.equal(invalid.ok, false);
+  assert.equal(valid.ok, true);
+  assert.deepEqual(valid.config.queryAliases.legacy, ["qmd", "local-wiki"]);
 });
 
 test("validateConfigFile handles defaults, missing includes, and malformed JSON", async () => {

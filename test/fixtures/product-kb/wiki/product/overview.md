@@ -8,6 +8,8 @@ local-wiki runs on the user's machine. Runtime search requires no API key, hoste
 
 Search combines BM25-like lexical scoring, character trigram cosine similarity, exact phrase boosts, heading coverage, and path coverage. These n-gram vectors are deterministic lexical features, not dense semantic embeddings.
 
+Version 0.6 adds deterministic camelCase, snake_case, dotted path, and error-code query rewriting. Field-aware evidence and reciprocal-rank fusion preserve exact lexical ranking while improving structured matches. Stable wiki pages are preferred over old daily history; daily entries use time decay, repeated task topics collapse, and `supersededBy` or archived status lowers obsolete material.
+
 ## Supported Knowledge
 
 The index reads Markdown, plain text, HTML, and HTM files. It handles Chinese phrases, English identifiers, configuration keys, error messages, API names, and file paths.

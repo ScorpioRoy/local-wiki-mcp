@@ -49,7 +49,7 @@ GitHub release notes 从匹配版本的 Changelog 段落提取。
 发布回滚不会自动执行。先生成待审核命令计划：
 
 ```powershell
-npm run release:rollback-plan -- --version 0.4.0 --previous 0.3.0
+npm run release:rollback-plan -- --version 0.6.0 --previous 0.5.0
 ```
 
 计划会弃用失败版本，并把指定 dist-tag 移回已知可用版本。它不会自动执行网络命令，也不会删除 npm 历史版本。

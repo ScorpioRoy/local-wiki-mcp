@@ -1,5 +1,23 @@
 # 变更日志
 
+## 0.6.0 - 2026-07-16
+
+- 增加字段化 BM25、确定性标识符改写、可配置 `queryAliases` 独立证据、轻量 RRF、来源分层、daily 时间衰减和过时内容降权。
+- `search_wiki` 增加主题去重、相邻上下文、置信度和默认 2000 token 结果预算。
+- 新增共享 loopback daemon 与轻量 MCP bridge；随机 token 鉴权，故障时自动回退直接本地检索。
+- 新增 `runtime status|stop|install|uninstall`、`doctor --fix` 和 5MB runtime 日志轮转。
+- eval 增加 MRR、nDCG、结果 token、主题重复率和低置信度率，并加入 hard-negative 语料。
+- 新增可配置 scale benchmark，保持默认零模型、零 API key 和 index v3 兼容。
+- 包验证在 Windows 清理隔离 npm cache 时增加有限重试，避免目录项释放延迟造成假失败。
+
+## 0.5.0 - 2026-07-16
+
+- 新增 `context` 紧凑启动上下文，减少固定读取最近 daily 全文的 token 成本。
+- watch 增加单实例进程锁、失效锁恢复和索引缓存复用。
+- 新增默认关闭的 Ollama 本地 embedding reranker，仅允许 loopback、拒绝 HTTP 重定向，失败自动回退词法结果。
+- MCP 索引缓存支持空闲卸载和状态指标，降低多任务长期驻留内存。
+- 增加真实知识库私有 eval 工作流、Windows 当前用户 watcher 启动脚本和中文 init 模板。
+
 ## 0.4.0 - 2026-07-15
 
 - 新增 `version`、`config validate`、`doctor --verbose`、`status --metrics` 和 `explain` 产品命令。
