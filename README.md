@@ -11,7 +11,7 @@ English documentation: [README.en.md](README.en.md)
 - 稳定覆盖中文知识、英文标识符、配置项、报错、API 名和文件路径。
 - 提供稳定的只读 MCP 工具：`search_wiki`、`grep_wiki`、`read_wiki`、`status_wiki`。
 - 支持真正增量的 `sync`、MCP 进程内缓存、路径去重和索引过期提示。
-- 使用字段化 BM25、确定性标识符改写、轻量 RRF、来源分层和 daily 时间衰减改善无模型排序。
+- 使用字段化 BM25、确定性标识符改写、轻量 RRF、来源分层、异构来源校准和 daily 时间衰减改善无模型排序。
 - 提供 `context` 紧凑启动上下文、单实例 watcher 和 MCP 空闲索引卸载。
 - 提供单实例 loopback daemon 与轻量 MCP bridge，多个 Codex/Cursor 共享一份解析索引。
 - 可选使用仅限 loopback 的 Ollama embedding 对词法候选重排，默认关闭且失败自动回退。
@@ -151,7 +151,7 @@ audit   [--root DIR]                     检查乱码和遗留 qmd 规则
 serve   [--root DIR] [--watch]           启动 MCP stdio 服务
 ```
 
-`explain` 适合排查排名异常。它会输出规范化查询、token、trigram 数量、query rewrite、alias、启用权重、BM25/vector/boost 分项、命中词项和多样性过滤情况，但不会修改索引。
+`explain` 适合排查排名异常。它会输出规范化查询、token、trigram 数量、query rewrite、alias、启用权重、BM25/vector/boost 分项、异构来源校准、命中词项和多样性过滤情况，但不会修改索引。
 
 ## MCP 工具
 

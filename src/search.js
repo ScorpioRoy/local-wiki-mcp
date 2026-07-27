@@ -5,6 +5,18 @@ const BM25_B = 0.75;
 const IDENTIFIER_EXPANSION_WEIGHT = 0.25;
 const QUERY_ALIAS_WEIGHT = 1.25;
 const INDEX_SEARCH_CACHE = new WeakMap();
+const SOURCE_CALIBRATION = {
+  wiki: 1,
+  product_doc: 1,
+  rule: 1,
+  memory: 0.9,
+  workstate: 0.85,
+  daily: 0.85,
+  docs: 0.8,
+  wiki_index: 0.45,
+  template: 0.45,
+  document: 0.5,
+};
 
 export function searchIndex(index, query, options = {}) {
   return rankSearch(index, query, options).results;
@@ -18,7 +30,7 @@ export function explainSearch(index, query, options = {}) {
       lexical: "field-aware BM25-like token scoring",
       fuzzy: "character trigram cosine similarity",
       fusion: "reciprocal rank fusion",
-      boosts: ["exact phrase", "heading coverage", "path coverage", "identifier coverage", "source lifecycle"],
+      boosts: ["exact phrase", "heading coverage", "path coverage", "identifier coverage", "source lifecycle", "heterogeneous source calibration"],
       dense_embeddings: false,
     },
     query_analysis: {
@@ -119,6 +131,7 @@ function rankSearch(index, query, options = {}, explain = false) {
     });
 
   applyReciprocalRankFusion(candidates);
+  applyHeterogeneousSourceCalibration(candidates);
   const scored = candidates.sort((left, right) => {
       if (right.score !== left.score) return right.score - left.score;
       return left.path.localeCompare(right.path);
@@ -272,6 +285,21 @@ function applyReciprocalRankFusion(results) {
     }
     result.scores.rrf = rrf;
     result.score = result.scores.linear + rrf + result.scores.source + result.scores.lifecycle;
+  }
+}
+
+function applyHeterogeneousSourceCalibration(results) {
+  const heterogeneous = new Set(results.map((result) => result.source_type)).size > 1;
+  for (const result of results) {
+    const source = heterogeneous ? (SOURCE_CALIBRATION[result.source_type] ?? 0.7) : 1;
+    const coverage = heterogeneous ? 0.5 + (0.5 * (result.scores.term_coverage ?? 0)) : 1;
+    const calibration = source * coverage;
+    result.scores.calibration = calibration;
+    if (result.explanation) {
+      result.explanation.source_calibration = source;
+      result.explanation.coverage_calibration = coverage;
+    }
+    result.score *= calibration;
   }
 }
 

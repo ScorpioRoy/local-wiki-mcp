@@ -16,7 +16,7 @@ It is designed for `agent-memory` style LLM wiki systems:
 - Config validation, verbose diagnostics, index metrics, and score explanations for product operation.
 - Clean package-install verification, release gates, and watch soak tooling for team distribution.
 - Compact `context` startup output, a single-instance watcher, and idle MCP index unloading.
-- Deterministic field-aware ranking, identifier rewriting, source tiers, daily recency, confidence, and token budgets.
+- Deterministic field-aware ranking, identifier rewriting, heterogeneous source calibration, daily recency, confidence, and token budgets.
 - A single authenticated loopback daemon with lightweight MCP bridges and direct-search fallback.
 - Optional loopback-only Ollama embedding reranking with lexical fallback.
 
@@ -147,7 +147,7 @@ audit   [--root DIR]                     Check mojibake and legacy qmd rules
 serve   [--root DIR] [--watch]           Start the MCP stdio server
 ```
 
-Use `explain` when a result ranks unexpectedly. It reports normalized query tokens, query rewrites, aliases, trigram counts, active weights, BM25/vector/boost components, matched terms, and diversity filtering without changing the index.
+Use `explain` when a result ranks unexpectedly. It reports normalized query tokens, query rewrites, aliases, trigram counts, active weights, BM25/vector/boost components, heterogeneous source calibration, matched terms, and diversity filtering without changing the index.
 
 ## MCP Tools
 

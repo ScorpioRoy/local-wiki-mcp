@@ -11,7 +11,7 @@
 - 紧凑 index v3、真正增量 `sync`、MCP 进程内缓存和默认路径去重。
 - `context` 紧凑启动上下文、单实例 watcher 和空闲索引卸载。
 - 默认关闭、仅限 loopback 且拒绝重定向的 Ollama 本地语义重排。
-- 无模型字段化排序、历史来源治理、置信度和默认 2000 token 结果预算。
+- 无模型字段化排序、异构来源校准、历史来源治理、置信度和默认 2000 token 结果预算。
 - 单实例共享 daemon、随机 token 鉴权和 daemon 故障时的直接检索回退。
 - 稳定的只读 MCP 工具：`search_wiki`、`grep_wiki`、`read_wiki`、`status_wiki`。
 - `doctor`、`repair`、`watch`、`bench`、`eval`、`smoke`、`audit` 等产品运维命令。

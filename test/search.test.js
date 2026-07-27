@@ -225,6 +225,37 @@ test("searchIndex prefers stable wiki over old daily and de-duplicates daily top
   assert.equal(results.filter((result) => result.source_type === "daily").length, 1);
 });
 
+test("searchIndex records source calibration in heterogeneous corpora", () => {
+  const index = buildIndex([
+    {
+      id: "wiki/guide.md#1",
+      path: "wiki/guide.md",
+      heading: "记忆收尾指南",
+      text: "完成任务前检查 daily、wiki 和 skills-sync，并记录最终结果。",
+    },
+    {
+      id: "wiki/index.md#1",
+      path: "wiki/index.md",
+      heading: "记忆更新",
+      text: "完成任务前检查项目。",
+    },
+    {
+      id: "templates/report.md#1",
+      path: "templates/report.md",
+      heading: "记忆更新",
+      text: "完成任务前检查项目。",
+    },
+  ]);
+  const results = searchIndex(index, "完成任务前记忆更新要检查哪些项目", { topK: 3 });
+  const guide = results.find((result) => result.source_type === "wiki");
+  const navigation = results.find((result) => result.source_type === "wiki_index");
+  const template = results.find((result) => result.source_type === "template");
+
+  assert(guide.scores.calibration > navigation.scores.calibration);
+  assert(guide.scores.calibration > template.scores.calibration);
+  assert(template.scores.calibration <= 0.45);
+});
+
 test("searchIndex can attach adjacent context and enforce an output token budget", () => {
   const index = buildIndex([
     { id: "wiki/guide.md#1", path: "wiki/guide.md", heading: "Before", text: "前置背景。" },
