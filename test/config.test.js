@@ -24,6 +24,7 @@ test("loadConfig returns defaults when config file is missing", async () => {
     const config = await loadConfig(root);
 
     assert.deepEqual(config.includes, ["wiki", "MEMORY.md"]);
+    assert.deepEqual(config.scopeRoots, ["."]);
     assert.equal(config.indexDir, ".local-wiki-index");
     assert.equal(config.maxChunkChars, 2400);
     assert.equal(config.searchWeights.exact, 3);
@@ -42,10 +43,12 @@ test("loadConfig reads .local-wiki.json and normalizes arrays", async () => {
   await withTempDir(async (root) => {
     await writeFile(path.join(root, ".local-wiki.json"), JSON.stringify({
       includes: ["docs", "NOTES.md"],
+      scopeRoots: [".", "./agent-memory/"],
       indexDir: ".cache/wiki",
       exclude: ["secret"],
       maxChunkChars: 1200,
       searchWeights: { exact: 4, title: 2, path: 1.25 },
+      projectGroups: { "support-suite": ["support-web", "support-service", "data-sync", "admin-service"] },
       mcpCache: { reloadCheckTtlMs: 250, freshnessTtlMs: 1500, idleUnloadMs: 60000 },
       reranker: {
         provider: "ollama",
@@ -61,12 +64,19 @@ test("loadConfig reads .local-wiki.json and normalizes arrays", async () => {
     const config = await loadConfig(root);
 
     assert.deepEqual(config.includes, ["docs", "NOTES.md"]);
+    assert.deepEqual(config.scopeRoots, [".", "agent-memory"]);
     assert.equal(config.indexDir, ".cache/wiki");
     assert.deepEqual(config.exclude, ["secret"]);
     assert.equal(config.maxChunkChars, 1200);
     assert.equal(config.searchWeights.exact, 4);
     assert.equal(config.searchWeights.title, 2);
     assert.equal(config.searchWeights.path, 1.25);
+    assert.deepEqual(config.projectGroups["support-suite"], [
+      "support-web",
+      "support-service",
+      "data-sync",
+      "admin-service",
+    ]);
     assert.equal(config.mcpCache.reloadCheckTtlMs, 250);
     assert.equal(config.mcpCache.freshnessTtlMs, 1500);
     assert.equal(config.mcpCache.idleUnloadMs, 60000);
@@ -156,6 +166,48 @@ test("validateConfigValue validates query alias dictionaries", () => {
   assert.equal(invalid.ok, false);
   assert.equal(valid.ok, true);
   assert.deepEqual(valid.config.queryAliases.legacy, ["qmd", "local-wiki"]);
+});
+
+test("validateConfigValue validates unambiguous project groups", () => {
+  const invalid = validateConfigValue({
+    projectGroups: {
+      "support-suite": ["support-web"],
+      other: ["support-web"],
+    },
+  });
+  const valid = validateConfigValue({
+    projectGroups: {
+      "support-suite": ["support-web", "support-service", "data-sync", "admin-service"],
+    },
+  });
+
+  assert.equal(invalid.ok, false);
+  assert(invalid.errors.some((entry) => entry.path === "$.projectGroups"));
+  assert.equal(valid.ok, true);
+  assert.deepEqual(valid.config.projectGroups["support-suite"], [
+    "support-web",
+    "support-service",
+    "data-sync",
+    "admin-service",
+  ]);
+});
+
+test("validateConfigValue validates relative non-empty scope roots", () => {
+  const invalid = validateConfigValue({
+    scopeRoots: [".", "../private", "C:\\private"],
+  }, { root: path.resolve("knowledge") });
+  const empty = validateConfigValue({ scopeRoots: [] });
+  const valid = validateConfigValue({
+    scopeRoots: [".", "agent-memory"],
+  }, { root: path.resolve("knowledge") });
+
+  assert.equal(invalid.ok, false);
+  assert(invalid.errors.some((entry) => entry.path === "$.scopeRoots[1]"));
+  assert(invalid.errors.some((entry) => entry.path === "$.scopeRoots[2]"));
+  assert.equal(empty.ok, false);
+  assert(empty.errors.some((entry) => entry.path === "$.scopeRoots"));
+  assert.equal(valid.ok, true);
+  assert.deepEqual(valid.config.scopeRoots, [".", "agent-memory"]);
 });
 
 test("validateConfigFile handles defaults, missing includes, and malformed JSON", async () => {

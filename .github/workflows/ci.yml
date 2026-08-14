@@ -28,5 +28,7 @@ jobs:
           cache: npm
       - run: npm ci --ignore-scripts
       - run: npm run ci
+      - if: runner.os == 'macOS' && matrix.node == 24
+        run: sh .github/scripts/verify-macos-runtime.sh
       - if: matrix.node == 24
         run: npm run test:soak

@@ -17,7 +17,7 @@ export async function buildStartupContext(root, options = {}) {
 
   for (const file of dailyFiles) {
     const content = await readFile(file.absolutePath, "utf8");
-    const fileTasks = extractTasks(content, file.date).reverse();
+    const fileTasks = extractTasks(content, file.date).filter(isCurrentTask).reverse();
     tasks.push(...fileTasks);
     if (tasks.length >= maxTasks) break;
   }
@@ -69,10 +69,15 @@ export function extractTasks(content, date) {
       date,
       number: Number(match[1]),
       title: match[2].trim(),
+      status: field(body, "状态").toLowerCase() || "active",
       project: field(body, "项目·模块"),
       pending: field(body, "遗留/待办"),
     };
   });
+}
+
+function isCurrentTask(task) {
+  return !/^(superseded|archived|deprecated|obsolete|closed)$/.test(task.status);
 }
 
 async function findRecentDailyFiles(rootPath, now, days) {

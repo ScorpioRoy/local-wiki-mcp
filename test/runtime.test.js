@@ -9,6 +9,8 @@ import {
   createRuntimeBridgeHandlers,
   inspectRuntime,
   readRuntimeState,
+  runMacRuntimeInstaller,
+  runRuntimeInstaller,
   runWindowsRuntimeInstaller,
   startRuntimeServer,
 } from "../src/runtime.js";
@@ -118,4 +120,34 @@ test("Windows runtime installer uses the packaged PowerShell script", () => {
   assert(invocation.args.includes("-NoStart"));
   assert(invocation.args.includes("D:/package/install.ps1"));
   assert.equal(invocation.options.windowsHide, true);
+});
+
+test("macOS runtime installer uses the packaged LaunchAgent script", () => {
+  let invocation;
+  const result = runMacRuntimeInstaller("/Users/test/knowledge", {
+    platform: "darwin",
+    script: "/package/install-macos-runtime.sh",
+    noStart: true,
+    spawnSync(command, args, options) {
+      invocation = { command, args, options };
+      return { status: 0, stdout: "installed", stderr: "" };
+    },
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(invocation.command, "/bin/sh");
+  assert(invocation.args.includes("--no-start"));
+  assert(invocation.args.includes("/package/install-macos-runtime.sh"));
+  assert.equal(invocation.options.encoding, "utf8");
+});
+
+test("runtime installer dispatches by platform and rejects unsupported systems", () => {
+  const spawnSync = () => ({ status: 0, stdout: "ok", stderr: "" });
+  assert.equal(runRuntimeInstaller("D:/knowledge", {
+    platform: "win32", script: "D:/install.ps1", spawnSync,
+  }).ok, true);
+  assert.equal(runRuntimeInstaller("/Users/test/knowledge", {
+    platform: "darwin", script: "/install.sh", spawnSync,
+  }).ok, true);
+  assert.throws(() => runRuntimeInstaller("/tmp/knowledge", { platform: "linux" }), /Windows and macOS/i);
 });

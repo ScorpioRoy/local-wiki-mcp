@@ -17,6 +17,7 @@
     { "query": "watch intervalMs strictEvery config validate", "variants": ["polling and periodic hash settings", "diagnose malformed configuration before serving"], "expected": ["wiki/product/configuration.md"], "category": "configuration", "top_k": 5 },
 
     { "query": "version init config validate index smoke setup", "variants": ["commands for creating and checking a new wiki", "first-run initialization workflow"], "expected": ["wiki/product/commands.md"], "category": "commands", "top_k": 5 },
+    { "query": "bind preview apply Codex Cursor backup conflict", "variants": ["safely attach a knowledge root to both MCP clients", "one command onboarding without overwriting client config"], "expected": ["wiki/product/commands.md"], "category": "commands", "top_k": 5 },
     { "query": "search grep read explain retrieval commands", "variants": ["concept query exact text full chunk and ranking evidence", "which CLI action should I use to find knowledge"], "expected": ["wiki/product/commands.md"], "category": "commands", "top_k": 5 },
     { "query": "sync watch repair force refresh commands", "variants": ["update normal edits automatically or rebuild corruption", "how to refresh the local index"], "expected": ["wiki/product/commands.md"], "category": "commands", "top_k": 5 },
     { "query": "status strict metrics doctor verbose inspection", "variants": ["check freshness density runtime and lock state", "deep health diagnostics commands"], "expected": ["wiki/product/commands.md"], "category": "commands", "top_k": 5 },
@@ -41,6 +42,7 @@
     { "query": "EPERM restricted Windows npm cache isolated temporary", "variants": ["package test cannot create the user cache directory", "run npm tarball verification in a controlled workspace"], "expected": ["wiki/product/troubleshooting.md"], "category": "troubleshooting", "top_k": 5 },
 
     { "query": "test:pack tgz clean consumer init index smoke", "variants": ["verify the actual npm artifact after installation", "tarball end-to-end package test"], "expected": ["wiki/product/release.md"], "category": "release", "top_k": 5 },
+    { "query": "release:package tgz SHA-256 manifest refuse overwrite", "variants": ["build a checksum bundle for controlled internal sharing", "create a verifiable tarball and file manifest"], "expected": ["wiki/product/release.md"], "category": "release", "top_k": 5 },
     { "query": "CI matrix Windows macOS Linux Node 20 22 24", "variants": ["which platforms must pass before release", "cross-platform continuous integration coverage"], "expected": ["wiki/product/release.md"], "category": "release", "top_k": 5 },
     { "query": "test:soak soak:watch twelve hours mutation freshness marker", "variants": ["long-running automatic refresh reliability test", "repeated file changes and final retrieval verification"], "expected": ["wiki/product/release.md"], "category": "release", "top_k": 5 },
     { "query": "npm publish provenance metadata Git tag credentials", "variants": ["strict prerequisites for a public package release", "supply chain attestation and repository ownership"], "expected": ["wiki/product/release.md"], "category": "release", "top_k": 5 },

@@ -7,8 +7,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
-  id-token: write
+  contents: read
 
 jobs:
   verify:
@@ -26,11 +25,16 @@ jobs:
           cache: npm
       - run: npm ci --ignore-scripts
       - run: npm run ci
+      - if: runner.os == 'macOS' && matrix.node == 24
+        run: sh .github/scripts/verify-macos-runtime.sh
 
   publish:
     needs: verify
     runs-on: ubuntu-latest
     environment: npm
+    permissions:
+      contents: write
+      id-token: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -38,12 +42,27 @@ jobs:
           node-version: 24
           registry-url: https://registry.npmjs.org
           cache: npm
+      - name: Require a public GitHub repository
+        shell: bash
+        run: test "$(gh api "repos/${{ github.repository }}" --jq .visibility)" = "public"
+        env:
+          GH_TOKEN: ${{ github.token }}
       - run: npm ci --ignore-scripts
       - run: npm run release:check:publish
+      - run: npm run release:package
       - run: npm run release:notes -- --output release-notes.md
-      - run: npm publish --access public --provenance
+      - id: package
+        shell: bash
+        run: echo "version=$(node -p \"require('./package.json').version\")" >> "$GITHUB_OUTPUT"
+      - run: npm publish "dist/local-wiki-mcp-${{ steps.package.outputs.version }}.tgz" --access public --provenance
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-      - run: gh release create "${{ github.ref_name }}" --verify-tag --notes-file release-notes.md
+      - run: >-
+          gh release create "${{ github.ref_name }}"
+          "dist/local-wiki-mcp-${{ steps.package.outputs.version }}.tgz"
+          "dist/local-wiki-mcp-${{ steps.package.outputs.version }}.sha256"
+          "dist/local-wiki-mcp-${{ steps.package.outputs.version }}.manifest.json"
+          --verify-tag
+          --notes-file release-notes.md
         env:
           GH_TOKEN: ${{ github.token }}

@@ -1,5 +1,26 @@
 # 排障指南
 
+## `bind` 预览后没有写入配置
+
+这是默认安全行为。先确认输出中的 `ok`、知识库根、Codex/Cursor 配置路径和动作；只有 `ok: true` 时才显式增加 `--apply`。`--initialize`、`--refresh` 和 `--install-runtime` 在预览模式下也不会执行。
+
+## `bind` 报告已有冲突配置
+
+- Codex 已存在未被 `local-wiki-mcp managed` 标记的 `[mcp_servers.local_wiki]` 时，工具不会接管。
+- Cursor 已存在内容不同的 `mcpServers.local-wiki` 时，工具不会覆盖。
+- 先核对现有配置和绑定预览；确需切换根目录时，人工移除或迁移冲突项后重新运行。不要直接删除整个 Codex/Cursor 配置文件。
+- 预览会返回具体客户端的 `error`，且不会先创建知识库或索引；先修复错误并重新预览，不要跳过门禁。
+- 成功写入前会在同目录创建 `.bak-<时间>-<pid>` 备份；备份可能包含其它客户端配置，应按用户配置同等级保护。
+
+## macOS LaunchAgent 未启动
+
+```bash
+local-wiki runtime status --root "$HOME/agent-memory"
+launchctl print "gui/$(id -u)/com.local-wiki-mcp.runtime"
+```
+
+确认 `~/Library/LaunchAgents/com.local-wiki-mcp.runtime.plist` 存在、Node 路径仍有效，并检查知识库 `.state/local-wiki-runtime.log`。Node 升级或安装路径变化后，重新运行 `runtime install` 生成 LaunchAgent；需要先移除时使用 `runtime uninstall`。
+
 ## 修改 `config.toml` 后 Codex 无法启动
 
 Windows 路径使用 TOML 单引号或正斜杠：
@@ -82,7 +103,7 @@ audit 报告 mojibake 时，修复 Markdown 源文件并运行 `local-wiki sync`
 [
   {
     "query": "Codex MCP 本地知识库",
-    "expected": ["wiki/cursor/memory-wiki-system.md"],
+    "expected": ["wiki/common/memory-wiki-system.md"],
     "top_k": 3
   }
 ]

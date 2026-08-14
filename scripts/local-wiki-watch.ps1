@@ -11,7 +11,8 @@ $ErrorActionPreference = "Stop"
 $KnowledgeRoot = (Resolve-Path -LiteralPath $Root).Path
 $StateDir = Join-Path $KnowledgeRoot ".state"
 $LogFile = Join-Path $StateDir "local-wiki-runtime.log"
-$LocalWiki = Get-Command "local-wiki" -ErrorAction Stop
+$Node = Get-Command "node" -ErrorAction Stop
+$LocalWikiCli = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..\src\cli.js")).Path
 $MaxLogBytes = 5MB
 
 New-Item -ItemType Directory -Path $StateDir -Force | Out-Null
@@ -26,11 +27,15 @@ try {
     }
     "[$(Get-Date -Format o)] Starting the single-instance local-wiki runtime." |
         Add-Content -LiteralPath $LogFile -Encoding utf8
-    & $LocalWiki.Source daemon --root $KnowledgeRoot --watch 2>&1 | ForEach-Object {
+    $PreviousErrorActionPreference = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    & $Node.Source $LocalWikiCli daemon --root $KnowledgeRoot --watch 2>&1 | ForEach-Object {
         "[$(Get-Date -Format o)] $($_.ToString())" |
             Add-Content -LiteralPath $LogFile -Encoding utf8
     }
-    exit $LASTEXITCODE
+    $RuntimeExitCode = $LASTEXITCODE
+    $ErrorActionPreference = $PreviousErrorActionPreference
+    exit $RuntimeExitCode
 } catch {
     "[$(Get-Date -Format o)] Runtime failed: $($_.Exception.Message)" |
         Add-Content -LiteralPath $LogFile -Encoding utf8

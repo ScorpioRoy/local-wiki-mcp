@@ -209,6 +209,35 @@ export function runWindowsRuntimeInstaller(root, options = {}) {
   };
 }
 
+export function runMacRuntimeInstaller(root, options = {}) {
+  const platform = options.platform ?? process.platform;
+  if (platform !== "darwin") throw new Error("LaunchAgent installation is only available on macOS.");
+  const script = options.script ?? fileURLToPath(new URL("../scripts/install-macos-runtime.sh", import.meta.url));
+  const args = [
+    script,
+    "--root", path.resolve(root),
+    ...(options.uninstall ? ["--uninstall"] : []),
+    ...(options.noStart ? ["--no-start"] : []),
+  ];
+  const spawn = options.spawnSync ?? spawnSync;
+  const result = spawn("/bin/sh", args, { encoding: "utf8" });
+  if (result.error) throw result.error;
+  if (result.status !== 0) throw new Error(result.stderr?.trim() || `Runtime installer exited with ${result.status}.`);
+  return {
+    ok: true,
+    action: options.uninstall ? "uninstall" : "install",
+    root: path.resolve(root),
+    output: result.stdout?.trim() ?? "",
+  };
+}
+
+export function runRuntimeInstaller(root, options = {}) {
+  const platform = options.platform ?? process.platform;
+  if (platform === "win32") return runWindowsRuntimeInstaller(root, options);
+  if (platform === "darwin") return runMacRuntimeInstaller(root, options);
+  throw new Error("Runtime installation is available on Windows and macOS only.");
+}
+
 export async function cleanupRuntimeFiles(root, indexDir) {
   const directory = resolveIndexDirectory(root, indexDir);
   await unlink(path.join(directory, RUNTIME_STATE_FILE)).catch(() => {});

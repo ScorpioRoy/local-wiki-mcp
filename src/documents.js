@@ -13,11 +13,12 @@ export async function discoverFiles(root, includes = ["wiki", "MEMORY.md"], opti
   const rootPath = path.resolve(root);
   const files = [];
   const exclude = normalizeExclude(options.exclude ?? []);
+  const extensions = normalizeExtensions(options.extensions);
 
   for (const include of includes) {
     const absolute = path.resolve(rootPath, include);
     if (!isInsideRoot(rootPath, absolute)) continue;
-    await collectFiles(rootPath, absolute, files, exclude);
+    await collectFiles(rootPath, absolute, files, exclude, extensions);
   }
 
   return [...new Set(files)].sort();
@@ -56,7 +57,7 @@ export function chunkDocument(document, options = {}) {
   return chunks;
 }
 
-async function collectFiles(rootPath, target, files, exclude) {
+async function collectFiles(rootPath, target, files, exclude, extensions) {
   let info;
   try {
     info = await lstat(target);
@@ -67,7 +68,7 @@ async function collectFiles(rootPath, target, files, exclude) {
   if (info.isSymbolicLink()) return;
 
   if (info.isFile()) {
-    if (SUPPORTED_EXTENSIONS.has(path.extname(target).toLowerCase())) {
+    if (extensions.has(path.extname(target).toLowerCase())) {
       const relativePath = toPosix(path.relative(rootPath, target));
       if (!isExcluded(relativePath, exclude)) {
         files.push(relativePath);
@@ -84,7 +85,7 @@ async function collectFiles(rootPath, target, files, exclude) {
   const entries = await readdir(target, { withFileTypes: true });
   for (const entry of entries) {
     if (entry.isDirectory() && SKIPPED_DIRS.has(entry.name)) continue;
-    await collectFiles(rootPath, path.join(target, entry.name), files, exclude);
+    await collectFiles(rootPath, path.join(target, entry.name), files, exclude, extensions);
   }
 }
 
@@ -154,6 +155,16 @@ function normalizeExclude(values) {
   return values
     .filter((value) => typeof value === "string" && value.trim())
     .map((value) => toPosix(value.trim()).replace(/^\/+/, "").replace(/\/+$/, ""));
+}
+
+function normalizeExtensions(values) {
+  if (values === undefined) return SUPPORTED_EXTENSIONS;
+  return new Set([...values]
+    .filter((value) => typeof value === "string" && value.trim())
+    .map((value) => {
+      const normalized = value.trim().toLowerCase();
+      return normalized.startsWith(".") ? normalized : `.${normalized}`;
+    }));
 }
 
 function isExcluded(relativePath, patterns) {

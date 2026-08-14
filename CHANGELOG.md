@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+## 0.7.0 - 2026-08-14
+
+- 新增默认只预览的 `local-wiki bind`，可显式初始化、刷新索引并安全绑定 Codex/Cursor；`--apply` 写入前备份配置，遇到未托管冲突时停止。
+- `bind` 预览现在只读预检知识库和全部客户端配置，无效现有配置不再被误报为待初始化；应用前先完成零写入门禁，并使用当前 Node.js 绝对路径生成 MCP 配置。
+- 新增 Windows PowerShell 与 macOS shell 薄包装脚本；`runtime install|uninstall` 在 macOS 使用当前用户 LaunchAgent，Windows 继续使用当前用户 Startup。
+- 新增拒绝覆盖的发布包生成器，同时输出 `.tgz`、SHA-256 和逐项 manifest；macOS CI 增加真实 LaunchAgent 安装、可达、smoke 与卸载验收。
+- 公开发布工作流要求 GitHub 仓库已公开，使用生成的同一份 `.tgz` 发布 npm，并将 `.tgz`、SHA-256 和 manifest 一起附加到 GitHub Release；验证矩阵保持只读权限。
+- `search_wiki` 和 `grep_wiki` 增加 `project` / `projects` 项目硬隔离、可核验 `scope` 回显、默认 common 知识保留，以及 CLI `--project` / `--no-common` / `--global`；同一 daily 文件和相邻上下文不再跨项目泄漏。
+- 新增可配置 `projectGroups`，将多代码仓库归并为一个业务项目 scope，并兼容成员仓库旧 ID、旧 Wiki 路径和历史 daily 元数据；同一成员不允许属于多个项目组。
+- 新增可配置 `scopeRoots`，让共享根 `wiki/<project>/` 与嵌套个人根 `agent-memory/wiki/<project>/` 使用同一项目硬隔离规则；默认 `["."]` 保持现有知识库行为不变。
 - 异构知识库按来源层级和查询覆盖率校准最终分数，降低短索引、日志和模板 chunk 对稳定 Wiki、产品文档、规则及精确 daily 记录的误压制。
 - 测试脚本改用 Node.js 内置自动发现，修复 Node.js 22/24 将 `test` 目录参数解析为模块路径导致的跨平台 CI 失败。
 

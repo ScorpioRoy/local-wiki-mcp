@@ -1,5 +1,9 @@
 # local-wiki-mcp
 
+[![CI](https://github.com/ScorpioRoy/local-wiki-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/ScorpioRoy/local-wiki-mcp/actions/workflows/ci.yml)
+[![npm](https://img.shields.io/npm/v/local-wiki-mcp.svg)](https://www.npmjs.com/package/local-wiki-mcp)
+[![license](https://img.shields.io/npm/l/local-wiki-mcp.svg)](LICENSE)
+
 `local-wiki-mcp` is a local-first search server for Markdown knowledge bases. It exposes read-only MCP tools for Codex, Cursor, and other AI coding tools, without API keys, hosted services, or native dependencies.
 
 中文主文档：[README.md](README.md)
@@ -28,7 +32,19 @@ It is designed for `agent-memory` style LLM wiki systems:
 
 ## Quick Start
 
-From this package directory, an unpublished local install can be linked globally:
+Install the public release:
+
+```powershell
+npm install -g local-wiki-mcp@0.7.0
+```
+
+For offline or controlled environments, install the `.tgz` attached to the GitHub Release after verifying its SHA-256 and manifest:
+
+```powershell
+npm install -g .\local-wiki-mcp-0.7.0.tgz
+```
+
+An audited source checkout can also be linked globally:
 
 ```powershell
 npm install -g .
@@ -56,6 +72,38 @@ node tools/local-wiki-mcp/src/cli.js repair --root .
 node tools/local-wiki-mcp/src/cli.js doctor --root .
 ```
 
+See [INSTALLATION.md](INSTALLATION.md) for tarball, source, npm publication, upgrade, and uninstall boundaries.
+
+## One-command Codex And Cursor Binding
+
+`bind` is preview-only by default. It does not initialize files, refresh the index, or edit client configuration until `--apply` is present:
+
+```powershell
+local-wiki bind --root D:\path\to\agent-memory --client codex --client cursor --initialize --refresh --daemon --install-runtime
+```
+
+After reviewing the root, config paths, and requested actions:
+
+```powershell
+local-wiki bind --root D:\path\to\agent-memory --client codex --client cursor --initialize --refresh --daemon --install-runtime --apply
+```
+
+Preview performs a read-only preflight of the knowledge base and both client configurations. Conflicts return `ok: false` with no writes. Initialization defaults to a lightweight `agent-memory` skeleton; it does not deploy a full team wiki, project mappings, Rules, Skills, or Hooks, and existing knowledge bases normally omit it. Existing client configuration is backed up before an atomic write. An unmanaged Codex section, a different Cursor `local-wiki` entry, or malformed configuration stops the operation. Managed client configuration uses the current absolute Node.js executable path so GUI applications do not depend on the terminal PATH.
+
+Packaged Windows and macOS wrappers call the same CLI implementation:
+
+```powershell
+$packageRoot = npm root -g
+powershell -File "$packageRoot\local-wiki-mcp\scripts\Bind-LocalWikiKnowledgeBase.ps1" -Root D:\path\to\agent-memory -Initialize -Refresh -Daemon
+```
+
+```bash
+PACKAGE_ROOT=$(npm root -g)
+sh "$PACKAGE_ROOT/local-wiki-mcp/scripts/bind-knowledge-base-macos.sh" --root "$HOME/agent-memory" --client codex --client cursor --initialize --refresh --daemon
+```
+
+Add `-Apply` on Windows or `--apply` on macOS only after reviewing the preview.
+
 ## Configuration
 
 Create `.local-wiki.json` in the knowledge-base root:
@@ -63,6 +111,7 @@ Create `.local-wiki.json` in the knowledge-base root:
 ```json
 {
   "includes": ["wiki", "MEMORY.md"],
+  "scopeRoots": ["."],
   "exclude": ["raw/private", "*.draft.md"],
   "indexDir": ".local-wiki-index",
   "maxChunkChars": 2400,
@@ -75,6 +124,9 @@ Create `.local-wiki.json` in the knowledge-base root:
   },
   "queryAliases": {
     "legacy knowledge base": ["qmd", "local-wiki", "migration"]
+  },
+  "projectGroups": {
+    "support-suite": ["case-service", "data-sync", "support-web", "support-service", "admin-service", "workorder-service", "workorder-web"]
   },
   "mcpCache": {
     "reloadCheckTtlMs": 1000,
@@ -109,7 +161,11 @@ node tools/local-wiki-mcp/src/cli.js index --root . --include wiki --index-dir .
 
 Default includes are `wiki` and `MEMORY.md`. Built-in skipped directories include `.git`, `.state`, `.local-wiki-index`, and `node_modules`.
 
+Use `scopeRoots` to declare relative knowledge roots for project and common path recognition. The default `["."]` keeps recognizing `wiki/<project>/` at the knowledge-base root. When a shared Git Wiki contains a private `agent-memory/` tree, use `[".", "agent-memory"]` to recognize both `wiki/<project>/` and `agent-memory/wiki/<project>/`. `scopeRoots` affects scope filtering only; `includes` still controls what is indexed. Entries must be non-empty relative paths that stay inside the knowledge-base root.
+
 Use `queryAliases` for stable, knowledge-base-specific synonyms. An alias expands only when the query contains its key, contributes independent BM25 and path evidence, and never calls a model. Keep aliases narrow and verify them with eval fixtures.
+
+Use `projectGroups` when one business project spans multiple repositories. Supplying the business project id or any member repository id canonicalizes the response to the business project and matches its Wiki, legacy member paths, and historical daily metadata. A member may belong to only one group. Keep optional dependencies out of the group and add them explicitly through `projects` when needed.
 
 Validate values and source paths before starting MCP:
 
@@ -126,12 +182,15 @@ Validation reports malformed JSON, invalid numeric values, unknown fields, missi
 ```text
 version [--json]                         Show product and runtime versions
 init    [--root DIR] [--template NAME]   Create an agent-memory or minimal skeleton
+bind    [--root DIR] --client NAME        Preview or apply Codex/Cursor bindings
 index   [--root DIR] [--include PATH]    Full rebuild of the local JSON index
 sync    [--root DIR] [--include PATH]    Incrementally refresh the local JSON index
 context [--root DIR] [--days N]          Print compact startup context
 search  <query> [--root DIR] [--rerank]  Hybrid search with optional local reranking
+        [--project NAME ...] [--no-common] [--global]
 explain <query> [--root DIR]             Explain query parsing and score evidence
 grep    <pattern> [--root DIR]           Exact substring search
+        [--project NAME ...] [--no-common] [--global]
 read    <path-or-id> [--root DIR]        Read indexed chunks
 status  [--root DIR] [--strict]          Show index metadata and stale state
         [--metrics]                      Include index size and density metrics
@@ -141,6 +200,8 @@ bench   [--root DIR] [--query TEXT]      Measure load and search latency
 eval    [--root DIR] --fixture FILE      Score search against query fixtures
 smoke   [--root DIR]                     Verify index and MCP search readiness
 watch   [--root DIR] [--interval-ms N]   Auto-sync changed knowledge files
+daemon  [--root DIR] [--watch]           Start the shared loopback runtime
+runtime install|uninstall [--root DIR]   Manage Windows Startup or macOS LaunchAgent
 config  codex|cursor [--root DIR]        Print MCP configuration snippets
 config  validate [--root DIR]            Validate config values and source paths
 audit   [--root DIR]                     Check mojibake and legacy qmd rules
@@ -158,6 +219,7 @@ Use for concepts, decisions, setup notes, and workflow knowledge.
 ```json
 {
   "query": "Codex MCP local wiki",
+  "project": "legacy-app",
   "top_k": 8,
   "max_chunks_per_path": 1,
   "diversity": true
@@ -185,8 +247,34 @@ Use for exact text, config keys, error messages, paths, class names, and functio
 ```json
 {
   "pattern": "config.toml",
+  "project": "legacy-app",
   "top_k": 20
 }
+```
+
+### Multi-project isolation
+
+For project work, pass `project` to `search_wiki` and `grep_wiki`; for intentional cross-project work, pass an explicit `projects` allowlist. Project scope is a hard result filter. It retains `wiki/<project>/` below every configured `scopeRoots` entry, chunks whose `项目·模块:` / `project:` / `projects:` metadata matches, and common knowledge by default. Chunks and adjacent context belonging to other projects are excluded even when they share the same daily file.
+
+```json
+{
+  "query": "questionnaire requirements",
+  "projects": ["support-web", "support-service"],
+  "include_common": true
+}
+```
+
+Omitting `project` and `projects` preserves backward-compatible global search; `"scope": "global"` makes that intent explicit. Set `"include_common": false` only when shared rules, templates, and product documentation are not wanted. Responses echo the effective `scope` for verification.
+
+With `projectGroups`, a repository id is canonicalized to its business project. For example, `project: "support-web"` can resolve and echo as `project: "support-suite"`. Keep optional systems such as Legacy App outside the fixed group and use `projects: ["support-suite", "legacy-app"]` for intentional integration work.
+
+Equivalent CLI examples:
+
+```powershell
+local-wiki search "questionnaire requirements" --root . --project legacy-app
+local-wiki grep "QUESTIONNAIRE_API" --root . --project legacy-app --no-common
+local-wiki search "integration issue" --root . --project support-web --project support-service
+local-wiki search "global question" --root . --global
 ```
 
 ### `read_wiki`
@@ -195,7 +283,7 @@ Read indexed chunks by path, path suffix, or chunk id.
 
 ```json
 {
-  "target": "wiki/cursor/memory-wiki-system.md",
+  "target": "wiki/common/memory-wiki-system.md",
   "max_chars": 12000
 }
 ```
@@ -235,7 +323,13 @@ $packageRoot = npm root -g
 powershell -File "$packageRoot\local-wiki-mcp\scripts\install-windows-watch.ps1" -Root D:\path\to\agent-memory
 ```
 
-Add `-Uninstall` to remove the shortcut or `-NoStart` to install it without starting immediately. Logs rotate at 5MB under `.state/local-wiki-runtime.log`.
+On macOS, install the current-user LaunchAgent:
+
+```bash
+local-wiki runtime install --root "$HOME/agent-memory"
+```
+
+`runtime uninstall` removes the current-user Startup shortcut or LaunchAgent without deleting Markdown or the index. Runtime logs stay under `.state/local-wiki-runtime.log`; Windows rotates them at 5MB.
 
 ## Optional Local Semantic Reranking
 
@@ -289,6 +383,8 @@ Example:
 }
 ```
 
+The `config` commands only print snippets. Use preview-first `local-wiki bind` when safe merging into Codex or Cursor configuration is desired.
+
 ## Bench And Eval
 
 Latency check:
@@ -303,7 +399,7 @@ Evaluation fixture:
 [
   {
     "query": "Codex MCP local wiki",
-    "expected": ["wiki/cursor/memory-wiki-system.md"],
+    "expected": ["wiki/common/memory-wiki-system.md"],
     "top_k": 3
   }
 ]
@@ -338,7 +434,7 @@ npm run soak:watch
 npm run bench:scale
 ```
 
-`test:pack` creates and installs a real `.tgz` in an isolated consumer project, then runs init, config validation, indexing, and smoke checks. `test:soak` is the short CI mutation test; `soak:watch` defaults to 12 hours. See [RELEASING.md](RELEASING.md) for remote metadata, npm provenance, tagging, and rollback gates.
+`test:pack` creates a real `.tgz`, SHA-256 file, and manifest through the release-package builder, verifies them, installs the tarball in an isolated consumer project, then runs init, config validation, indexing, and smoke checks. `release:package` writes the same refusal-to-overwrite bundle to `dist/` for controlled internal sharing. `test:soak` is the short CI mutation test; `soak:watch` defaults to 12 hours. See [RELEASING.md](RELEASING.md) for remote metadata, npm provenance, tagging, and rollback gates.
 
 ## Migration From qmd
 

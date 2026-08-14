@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -33,6 +33,93 @@ test("cli indexes and searches a local wiki", async () => {
 
     const status = await execFileAsync("node", [cliPath, "status", "--root", root]);
     assert.match(status.stdout, /chunk_count/i);
+  });
+});
+
+test("cli search and grep can isolate one project while retaining common wiki", async () => {
+  await withTempDir(async (root) => {
+    await mkdir(path.join(root, "wiki", "legacy-app"), { recursive: true });
+    await mkdir(path.join(root, "wiki", "support-service"), { recursive: true });
+    await mkdir(path.join(root, "wiki", "common"), { recursive: true });
+    await writeFile(path.join(root, "wiki", "legacy-app", "questionnaire.md"), "# Legacy App\nQUESTIONNAIRE_SHARED 问卷需求");
+    await writeFile(path.join(root, "wiki", "support-service", "questionnaire.md"), "# Project B\nQUESTIONNAIRE_SHARED 问卷需求");
+    await writeFile(path.join(root, "wiki", "common", "source.md"), "# Common\nQUESTIONNAIRE_SHARED 问卷需求先确认项目事实源");
+    await execFileAsync("node", [cliPath, "index", "--root", root, "--include", "wiki"]);
+
+    const search = await execFileAsync("node", [cliPath, "search", "问卷需求", "--root", root, "--project", "legacy-app", "--top-k", "10"]);
+    const parsedSearch = JSON.parse(search.stdout);
+    const grep = await execFileAsync("node", [cliPath, "grep", "QUESTIONNAIRE_SHARED", "--root", root, "--project", "legacy-app"]);
+    const parsedGrep = JSON.parse(grep.stdout);
+
+    assert(parsedSearch.results.some((result) => result.path === "wiki/legacy-app/questionnaire.md"));
+    assert(parsedSearch.results.some((result) => result.path === "wiki/common/source.md"));
+    assert(!parsedSearch.results.some((result) => result.path.startsWith("wiki/support-service/")));
+    assert.deepEqual(parsedGrep.results.map((result) => result.path).sort(), [
+      "wiki/common/source.md",
+      "wiki/legacy-app/questionnaire.md",
+    ]);
+  });
+});
+
+test("cli applies configured project groups and canonicalizes repository ids", async () => {
+  await withTempDir(async (root) => {
+    await mkdir(path.join(root, "wiki", "support-suite"), { recursive: true });
+    await mkdir(path.join(root, "wiki", "legacy-app"), { recursive: true });
+    await writeFile(path.join(root, ".local-wiki.json"), JSON.stringify({
+      includes: ["wiki"],
+      projectGroups: {
+        "support-suite": ["support-web", "support-service", "data-sync", "admin-service"],
+      },
+    }));
+    await writeFile(path.join(root, "wiki", "support-suite", "scope.md"), "# support-suite\nSUPPORT_SUITE_CLI_GROUP_SCOPE");
+    await writeFile(path.join(root, "wiki", "legacy-app", "scope.md"), "# Legacy App\nSUPPORT_SUITE_CLI_GROUP_SCOPE");
+    await execFileAsync("node", [cliPath, "index", "--root", root]);
+
+    const grouped = JSON.parse((await execFileAsync("node", [
+      cliPath, "search", "SUPPORT_SUITE_CLI_GROUP_SCOPE", "--root", root, "--project", "support-web", "--top-k", "10",
+    ])).stdout);
+    const crossProject = JSON.parse((await execFileAsync("node", [
+      cliPath, "grep", "SUPPORT_SUITE_CLI_GROUP_SCOPE", "--root", root,
+      "--project", "support-suite", "--project", "legacy-app",
+    ])).stdout);
+
+    assert.deepEqual(grouped.scope, { mode: "project", projects: ["support-suite"], include_common: true });
+    assert(grouped.results.some((result) => result.path === "wiki/support-suite/scope.md"));
+    assert(!grouped.results.some((result) => result.path.startsWith("wiki/legacy-app/")));
+    assert(crossProject.results.some((result) => result.path.startsWith("wiki/support-suite/")));
+    assert(crossProject.results.some((result) => result.path.startsWith("wiki/legacy-app/")));
+  });
+});
+
+test("cli applies configured scope roots while isolating personal wiki from project facts", async () => {
+  await withTempDir(async (root) => {
+    await mkdir(path.join(root, "wiki", "support-suite"), { recursive: true });
+    await mkdir(path.join(root, "agent-memory", "wiki", "support-suite"), { recursive: true });
+    await mkdir(path.join(root, "agent-memory", "wiki", "common"), { recursive: true });
+    await mkdir(path.join(root, "agent-memory", "wiki", "legacy-app"), { recursive: true });
+    await writeFile(path.join(root, ".local-wiki.json"), JSON.stringify({
+      includes: ["wiki", "agent-memory/wiki"],
+      scopeRoots: [".", "agent-memory"],
+      projectGroups: {
+        "support-suite": ["support-web", "support-service", "data-sync", "admin-service"],
+      },
+    }));
+    await writeFile(path.join(root, "wiki", "support-suite", "shared.md"), "# Shared\nCLI_MULTI_ROOT_SCOPE");
+    await writeFile(path.join(root, "agent-memory", "wiki", "support-suite", "private.md"), "# Private\nCLI_MULTI_ROOT_SCOPE");
+    await writeFile(path.join(root, "agent-memory", "wiki", "common", "common.md"), "# Common\nCLI_MULTI_ROOT_SCOPE");
+    await writeFile(path.join(root, "agent-memory", "wiki", "legacy-app", "private.md"), "# Legacy App\nCLI_MULTI_ROOT_SCOPE");
+    await execFileAsync("node", [cliPath, "index", "--root", root]);
+
+    const parsed = JSON.parse((await execFileAsync("node", [
+      cliPath, "search", "CLI_MULTI_ROOT_SCOPE", "--root", root, "--project", "data-sync", "--top-k", "10",
+    ])).stdout);
+    const paths = parsed.results.map((result) => result.path);
+
+    assert.deepEqual(parsed.scope, { mode: "project", projects: ["support-suite"], include_common: true });
+    assert(paths.includes("wiki/support-suite/shared.md"));
+    assert(!paths.includes("agent-memory/wiki/support-suite/private.md"));
+    assert(paths.includes("agent-memory/wiki/common/common.md"));
+    assert(!paths.includes("agent-memory/wiki/legacy-app/private.md"));
   });
 });
 
@@ -79,6 +166,57 @@ test("cli exposes product init config doctor and repair commands", async () => {
   });
 });
 
+test("cli bind previews by default and applies only to explicit config paths", async () => {
+  await withTempDir(async (base) => {
+    const root = path.join(base, "bound-knowledge");
+    const codexConfig = path.join(base, "home", ".codex", "config.toml");
+    const cursorConfig = path.join(base, "home", ".cursor", "mcp.json");
+    const common = [
+      cliPath, "bind", "--root", root,
+      "--client", "codex", "--client", "cursor",
+      "--codex-config", codexConfig, "--cursor-config", cursorConfig,
+      "--initialize", "--refresh", "--daemon",
+    ];
+    const preview = JSON.parse((await execFileAsync("node", common)).stdout);
+    assert.equal(preview.mode, "preview");
+    assert.equal(preview.ok, true);
+    assert.equal(preview.actions.apply_client_config, true);
+    assert.equal(preview.bindings.length, 2);
+
+    const applied = JSON.parse((await execFileAsync("node", [...common, "--apply"])).stdout);
+    assert.equal(applied.mode, "applied");
+    assert.equal(applied.smoke.ok, true);
+    assert.match(await (await import("node:fs/promises")).readFile(codexConfig, "utf8"), /local-wiki-mcp managed/);
+  });
+});
+
+test("cli bind returns a failing preview for conflicting client configuration", async () => {
+  await withTempDir(async (base) => {
+    const root = path.join(base, "bound-knowledge");
+    const cursorConfig = path.join(base, "home", ".cursor", "mcp.json");
+    await mkdir(path.dirname(cursorConfig), { recursive: true });
+    await writeFile(cursorConfig, JSON.stringify({
+      mcpServers: { "local-wiki": { command: "custom" } },
+    }));
+
+    await assert.rejects(
+      execFileAsync("node", [
+        cliPath, "bind", "--root", root,
+        "--client", "cursor", "--cursor-config", cursorConfig,
+        "--initialize",
+      ]),
+      error => {
+        const report = JSON.parse(error.stdout);
+        assert.equal(report.mode, "preview");
+        assert.equal(report.ok, false);
+        assert.match(report.bindings[0].error, /different local-wiki/i);
+        return true;
+      },
+    );
+    await assert.rejects(access(path.join(root, ".local-wiki.json")), /ENOENT/);
+  });
+});
+
 test("cli honors .local-wiki.json includes exclude and indexDir", async () => {
   await withTempDir(async (root) => {
     await mkdir(path.join(root, "docs", "private"), { recursive: true });
@@ -96,6 +234,25 @@ test("cli honors .local-wiki.json includes exclude and indexDir", async () => {
     const search = await execFileAsync("node", [cliPath, "search", "Configured", "--root", root]);
     const parsed = JSON.parse(search.stdout);
     assert.deepEqual(parsed.results.map((result) => result.path), ["docs/guide.md"]);
+  });
+});
+
+test("cli audit honors configured sources and scope roots", async () => {
+  await withTempDir(async (root) => {
+    await mkdir(path.join(root, "agent-memory", "wiki"), { recursive: true });
+    await writeFile(path.join(root, "AGENTS.md"), "qmd search shared-team-wiki");
+    await writeFile(path.join(root, "agent-memory", "wiki", "log.md"), "qmd collection memory-wiki");
+    await writeFile(path.join(root, ".local-wiki.json"), JSON.stringify({
+      includes: ["wiki", "agent-memory/wiki"],
+      scopeRoots: [".", "agent-memory"],
+    }));
+
+    const audit = await execFileAsync("node", [cliPath, "audit", "--root", root]);
+    const report = JSON.parse(audit.stdout);
+
+    assert.equal(report.ok, true);
+    assert.equal(report.scanned_files, 2);
+    assert.deepEqual(report.issues, []);
   });
 });
 

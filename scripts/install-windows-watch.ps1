@@ -27,7 +27,7 @@ if ($Uninstall) {
     exit 0
 }
 
-Get-Command "local-wiki" -ErrorAction Stop | Out-Null
+Get-Command "node" -ErrorAction Stop | Out-Null
 if ((Test-Path -LiteralPath $LegacyShortcutPath) -and ($LegacyShortcutPath -ne $ShortcutPath)) {
     Remove-Item -LiteralPath $LegacyShortcutPath -Force
 }

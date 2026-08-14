@@ -113,7 +113,7 @@ export async function syncIndexFromFiles(root, previousIndex, includes, options 
   });
 }
 
-export async function saveIndex(root, index, indexDir = DEFAULT_INDEX_DIR) {
+export async function saveIndex(root, index, indexDir = DEFAULT_INDEX_DIR, options = {}) {
   validateIndex(index, { allowLegacy: false });
   const dir = await safeIndexDirectory(root, indexDir);
   await mkdir(dir, { recursive: true });
@@ -122,12 +122,36 @@ export async function saveIndex(root, index, indexDir = DEFAULT_INDEX_DIR) {
   const temporary = path.join(dir, `${DEFAULT_INDEX_FILE}.tmp-${process.pid}-${Date.now()}`);
   await writeFile(temporary, `${JSON.stringify(index)}\n`, "utf8");
   try {
-    await rename(temporary, file);
+    await renameWithRetry(temporary, file, options);
   } catch (error) {
     await unlink(temporary).catch(() => {});
     throw error;
   }
   return file;
+}
+
+async function renameWithRetry(source, destination, options = {}) {
+  const renameImpl = options.rename ?? rename;
+  const attempts = Number.isInteger(options.renameAttempts) && options.renameAttempts > 0
+    ? options.renameAttempts
+    : 5;
+  const delayMs = Number.isFinite(options.renameDelayMs) && options.renameDelayMs >= 0
+    ? options.renameDelayMs
+    : 40;
+
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      await renameImpl(source, destination);
+      return;
+    } catch (error) {
+      if (!isTransientWindowsRenameError(error) || attempt === attempts) throw error;
+      await new Promise((resolve) => setTimeout(resolve, delayMs * attempt));
+    }
+  }
+}
+
+function isTransientWindowsRenameError(error) {
+  return new Set(["EPERM", "EACCES", "EBUSY"]).has(error?.code);
 }
 
 export async function loadIndex(root, indexDir = DEFAULT_INDEX_DIR) {

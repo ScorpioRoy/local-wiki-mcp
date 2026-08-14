@@ -1,4 +1,5 @@
 import { makeNgrams, normalizeText, rewriteQuery, summarize, tokenize, unique } from "./text.js";
+import { matchesProjectScope, resolveProjectScope } from "./project-scope.js";
 
 const BM25_K1 = 1.2;
 const BM25_B = 0.75;
@@ -81,9 +82,11 @@ function rankSearch(index, query, options = {}, explain = false) {
     identifier: positiveNumber(options.weights?.identifier, 1.25),
     source: positiveNumber(options.weights?.source, 0.75),
   };
-  const indexCache = getIndexSearchCache(index);
+  const projectScope = resolveProjectScope(options);
+  const indexCache = getIndexSearchCache(index, projectScope.scopeRoots);
+  const scopedChunks = index.chunks.filter((chunk) => matchesProjectScope(chunk, projectScope));
 
-  const candidates = index.chunks
+  const candidates = scopedChunks
     .map((chunk) => {
       const fields = indexCache.fields.get(chunk.id);
       const bm25Original = scoreBm25(index, chunk, originalQueryTokens);
@@ -147,7 +150,7 @@ function rankSearch(index, query, options = {}, explain = false) {
   const maxOutputTokens = positiveInteger(options.maxOutputTokens, undefined);
   const selected = explain || !diversity ? eligible.slice(0, topK) : eligible;
   decorateConfidence(selected, queryTokens);
-  if (contextChars > 0) attachAdjacentContext(index, selected, contextChars);
+  if (contextChars > 0) attachAdjacentContext(index, selected, contextChars, projectScope);
   const results = applyResultBudget(selected, maxOutputTokens);
 
   return {
@@ -314,8 +317,10 @@ export function grepIndex(index, pattern, options = {}) {
   const topK = positiveInteger(options.topK, 20);
   const needle = String(pattern ?? "").toLowerCase();
   if (!needle) return [];
+  const projectScope = resolveProjectScope(options);
 
   return index.chunks
+    .filter((chunk) => matchesProjectScope(chunk, projectScope))
     .filter((chunk) => `${chunk.path}\n${chunk.heading}\n${chunk.text}`.toLowerCase().includes(needle))
     .slice(0, topK)
     .map((chunk) => toResult(chunk, 1, { bm25: 1, vector: 0 }));
@@ -426,8 +431,8 @@ function decorateConfidence(results, queryTokens) {
   });
 }
 
-function attachAdjacentContext(index, results, maxChars) {
-  const positions = getIndexSearchCache(index).positions;
+function attachAdjacentContext(index, results, maxChars, projectScope) {
+  const positions = getIndexSearchCache(index, projectScope.scopeRoots).positions;
   for (const result of results) {
     const position = positions.get(result.id);
     if (!Number.isInteger(position)) continue;
@@ -436,37 +441,45 @@ function attachAdjacentContext(index, results, maxChars) {
     const budget = Math.max(0, maxChars);
     const half = Math.floor(budget / 2);
     const context = {};
-    if (before?.path === result.path) context.before = summarize(before.text, half);
-    if (after?.path === result.path) context.after = summarize(after.text, budget - (context.before?.length ?? 0));
+    if (before?.path === result.path && matchesProjectScope(before, projectScope)) {
+      context.before = summarize(before.text, half);
+    }
+    if (after?.path === result.path && matchesProjectScope(after, projectScope)) {
+      context.after = summarize(after.text, budget - (context.before?.length ?? 0));
+    }
     if (Object.keys(context).length) result.context = context;
   }
 }
 
-function getIndexSearchCache(index) {
-  let cache = INDEX_SEARCH_CACHE.get(index);
-  if (cache) return cache;
+function getIndexSearchCache(index, scopeRoots = ["."]) {
+  const cacheKey = [...scopeRoots].sort().join("\n");
+  let caches = INDEX_SEARCH_CACHE.get(index);
+  if (caches && caches.has(cacheKey)) return caches.get(cacheKey);
+  caches ??= new Map();
+  INDEX_SEARCH_CACHE.set(index, caches);
   const fields = new Map();
   const positions = new Map();
   index.chunks.forEach((chunk, position) => {
     const normalizedPath = String(chunk.path ?? "").replaceAll("\\", "/").toLowerCase();
+    const sourcePath = pathInsideMostSpecificScopeRoot(normalizedPath, scopeRoots);
     const body = String(chunk.text ?? "");
     let type = "document";
     let sourceScore = 0.55;
-    if (normalizedPath === "memory.md") [type, sourceScore] = ["memory", 0.95];
-    else if (normalizedPath.startsWith("tools/local-wiki-mcp/")) [type, sourceScore] = ["product_doc", 0.95];
-    else if (new Set(["wiki/index.md", "wiki/log.md"]).has(normalizedPath)) [type, sourceScore] = ["wiki_index", 0.7];
-    else if (normalizedPath.startsWith("wiki/")) [type, sourceScore] = ["wiki", 1];
-    else if (normalizedPath.startsWith("skills/") || normalizedPath.includes("/.cursor/rules/")) [type, sourceScore] = ["rule", 0.9];
-    else if (normalizedPath.startsWith("workstates/")) [type, sourceScore] = ["workstate", 0.75];
-    else if (normalizedPath.startsWith("daily/")) [type, sourceScore] = ["daily", 0.55];
-    else if (normalizedPath.startsWith("docs/")) [type, sourceScore] = ["docs", 0.7];
-    else if (normalizedPath.startsWith("templates/")) [type, sourceScore] = ["template", 0.3];
+    if (sourcePath === "memory.md") [type, sourceScore] = ["memory", 0.95];
+    else if (sourcePath.startsWith("tools/local-wiki-mcp/")) [type, sourceScore] = ["product_doc", 0.95];
+    else if (new Set(["wiki/index.md", "wiki/log.md"]).has(sourcePath)) [type, sourceScore] = ["wiki_index", 0.7];
+    else if (sourcePath.startsWith("wiki/")) [type, sourceScore] = ["wiki", 1];
+    else if (sourcePath.startsWith("skills/") || sourcePath.includes("/.cursor/rules/")) [type, sourceScore] = ["rule", 0.9];
+    else if (sourcePath.startsWith("workstates/")) [type, sourceScore] = ["workstate", 0.75];
+    else if (sourcePath.startsWith("daily/")) [type, sourceScore] = ["daily", 0.55];
+    else if (sourcePath.startsWith("docs/")) [type, sourceScore] = ["docs", 0.7];
+    else if (sourcePath.startsWith("templates/")) [type, sourceScore] = ["template", 0.3];
 
     const statusMatch = body.match(/^(?:-\s*)?(?:status|状态):\s*([^\r\n]+)$/im);
     const status = statusMatch?.[1]?.trim().toLowerCase() ?? "active";
     const superseded = /^(superseded|archived|deprecated|obsolete)$/i.test(status)
       || /^supersededBy:\s*\S+/im.test(body);
-    const dateMatch = type === "daily" ? normalizedPath.match(/(\d{4}-\d{2}-\d{2})\.md$/) : null;
+    const dateMatch = type === "daily" ? sourcePath.match(/(\d{4}-\d{2}-\d{2})\.md$/) : null;
     fields.set(chunk.id, {
       heading: normalizeText(chunk.heading),
       path: normalizeText(chunk.path),
@@ -482,9 +495,25 @@ function getIndexSearchCache(index) {
     });
     positions.set(chunk.id, position);
   });
-  cache = { fields, positions };
-  INDEX_SEARCH_CACHE.set(index, cache);
+  const cache = { fields, positions };
+  caches.set(cacheKey, cache);
   return cache;
+}
+
+function pathInsideMostSpecificScopeRoot(normalizedPath, scopeRoots) {
+  const matches = scopeRoots
+    .map((scopeRoot) => String(scopeRoot ?? ".").replaceAll("\\", "/").replace(/^\.\//, "").replace(/\/$/, "").toLowerCase() || ".")
+    .map((scopeRoot) => {
+      if (scopeRoot === ".") return { scopeRoot, relativePath: normalizedPath };
+      if (normalizedPath === scopeRoot) return { scopeRoot, relativePath: "" };
+      if (normalizedPath.startsWith(`${scopeRoot}/`)) {
+        return { scopeRoot, relativePath: normalizedPath.slice(scopeRoot.length + 1) };
+      }
+      return null;
+    })
+    .filter(Boolean)
+    .sort((left, right) => right.scopeRoot.length - left.scopeRoot.length);
+  return matches[0]?.relativePath ?? normalizedPath;
 }
 
 function applyResultBudget(results, maxOutputTokens) {

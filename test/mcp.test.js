@@ -21,8 +21,13 @@ const index = buildIndex([
 
 test("listTools exposes read-only knowledge tools", () => {
   const toolNames = listTools().map((tool) => tool.name);
+  const searchSchema = listTools().find((tool) => tool.name === "search_wiki").inputSchema.properties;
 
   assert.deepEqual(toolNames, ["search_wiki", "grep_wiki", "read_wiki", "status_wiki"]);
+  assert.deepEqual(searchSchema.scope.enum, ["global", "project"]);
+  assert.equal(searchSchema.project.type, "string");
+  assert.equal(searchSchema.projects.type, "array");
+  assert.equal(searchSchema.include_common.type, "boolean");
 });
 
 test("MCP initialize reports the product version", async () => {
@@ -70,6 +75,95 @@ test("search_wiki returns MCP text content with JSON results", async () => {
   assert.equal(parsed.results[0].path, "wiki/cursor/mcp.md");
   assert.equal(parsed.confidence.level, parsed.results[0].confidence.level);
   assert.equal(parsed.output_budget_tokens, 2000);
+});
+
+test("search_wiki and grep_wiki enforce explicit project scope", async () => {
+  const scopedIndex = buildIndex([
+    { id: "wiki/legacy-app/questionnaire.md#1", path: "wiki/legacy-app/questionnaire.md", heading: "Legacy App", text: "QUESTIONNAIRE_SHARED 问卷需求" },
+    { id: "wiki/support-service/questionnaire.md#1", path: "wiki/support-service/questionnaire.md", heading: "Project B", text: "QUESTIONNAIRE_SHARED 问卷需求" },
+    { id: "wiki/common/source.md#1", path: "wiki/common/source.md", heading: "事实源", text: "QUESTIONNAIRE_SHARED 问卷需求先确认项目。" },
+  ]);
+  const handlers = createToolHandlers({ loadIndex: async () => scopedIndex });
+
+  const searchResponse = await handlers.search_wiki({ query: "问卷需求", project: "Legacy App", top_k: 10 });
+  const search = JSON.parse(searchResponse.content[0].text);
+  const grepResponse = await handlers.grep_wiki({ pattern: "QUESTIONNAIRE_SHARED", project: "legacy-app" });
+  const grep = JSON.parse(grepResponse.content[0].text);
+
+  assert.deepEqual(search.scope, { mode: "project", projects: ["legacy-app"], include_common: true });
+  assert(search.results.some((result) => result.path === "wiki/legacy-app/questionnaire.md"));
+  assert(search.results.some((result) => result.path === "wiki/common/source.md"));
+  assert(!search.results.some((result) => result.path.startsWith("wiki/support-service/")));
+  assert.deepEqual(grep.results.map((result) => result.path), [
+    "wiki/legacy-app/questionnaire.md",
+    "wiki/common/source.md",
+  ]);
+});
+
+test("search_wiki canonicalizes repository ids through configured project groups", async () => {
+  const groupedIndex = buildIndex([
+    { id: "wiki/support-suite/questionnaire.md#1", path: "wiki/support-suite/questionnaire.md", heading: "support-suite", text: "SUPPORT_SUITE_GROUP_SCOPE" },
+    { id: "wiki/legacy-app/questionnaire.md#1", path: "wiki/legacy-app/questionnaire.md", heading: "Legacy App", text: "SUPPORT_SUITE_GROUP_SCOPE" },
+    { id: "daily/2026-08/2026-08-07.md#1", path: "daily/2026-08/2026-08-07.md", heading: "历史前端", text: "- 项目·模块: support-web · 问卷\nSUPPORT_SUITE_GROUP_SCOPE" },
+  ]);
+  const handlers = createToolHandlers({
+    loadIndex: async () => groupedIndex,
+    projectGroups: {
+      "support-suite": ["support-web", "support-service", "data-sync", "admin-service"],
+    },
+  });
+
+  const response = await handlers.search_wiki({ query: "SUPPORT_SUITE_GROUP_SCOPE", project: "support-web", top_k: 10 });
+  const parsed = JSON.parse(response.content[0].text);
+
+  assert.deepEqual(parsed.scope, { mode: "project", projects: ["support-suite"], include_common: true });
+  assert(parsed.results.some((result) => result.path === "wiki/support-suite/questionnaire.md"));
+  assert(parsed.results.some((result) => result.heading === "历史前端"));
+  assert(!parsed.results.some((result) => result.path.startsWith("wiki/legacy-app/")));
+});
+
+test("search_wiki and grep_wiki isolate personal wiki from project facts", async () => {
+  const multiRootIndex = buildIndex([
+    { id: "wiki/support-suite/shared.md#1", path: "wiki/support-suite/shared.md", heading: "共享", text: "MCP_MULTI_ROOT_SCOPE" },
+    { id: "agent-memory/wiki/support-suite/private.md#1", path: "agent-memory/wiki/support-suite/private.md", heading: "个人", text: "MCP_MULTI_ROOT_SCOPE" },
+    { id: "agent-memory/wiki/common/common.md#1", path: "agent-memory/wiki/common/common.md", heading: "通用", text: "MCP_MULTI_ROOT_SCOPE" },
+    { id: "agent-memory/wiki/legacy-app/private.md#1", path: "agent-memory/wiki/legacy-app/private.md", heading: "Legacy App", text: "MCP_MULTI_ROOT_SCOPE" },
+  ]);
+  const handlers = createToolHandlers({
+    loadIndex: async () => multiRootIndex,
+    projectGroups: {
+      "support-suite": ["support-web", "support-service", "data-sync", "admin-service"],
+    },
+    scopeRoots: [".", "agent-memory"],
+  });
+
+  const search = JSON.parse((await handlers.search_wiki({
+    query: "MCP_MULTI_ROOT_SCOPE",
+    project: "data-sync",
+    top_k: 10,
+  })).content[0].text);
+  const grep = JSON.parse((await handlers.grep_wiki({
+    pattern: "MCP_MULTI_ROOT_SCOPE",
+    project: "support-suite",
+    top_k: 10,
+  })).content[0].text);
+
+  for (const response of [search, grep]) {
+    const paths = response.results.map((result) => result.path);
+    assert(paths.includes("wiki/support-suite/shared.md"));
+    assert(!paths.includes("agent-memory/wiki/support-suite/private.md"));
+    assert(paths.includes("agent-memory/wiki/common/common.md"));
+    assert(!paths.includes("agent-memory/wiki/legacy-app/private.md"));
+  }
+});
+
+test("project scope requires at least one project", async () => {
+  const handlers = createToolHandlers({ loadIndex: async () => index });
+
+  await assert.rejects(
+    handlers.search_wiki({ query: "Codex", scope: "project" }),
+    /requires at least one project/i,
+  );
 });
 
 test("search_wiki supports adjacent context and token budget controls", async () => {

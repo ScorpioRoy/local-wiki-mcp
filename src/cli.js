@@ -20,12 +20,14 @@ import { DEFAULT_CONFIG, loadConfig, mergeCliOptions, validateConfigFile } from 
 import { runBench, runEval } from "./eval.js";
 import { buildKnowledgeBase, syncKnowledgeBase } from "./operations.js";
 import { startExclusiveWatcher } from "./watcher.js";
+import { publicProjectScope, resolveProjectScope } from "./project-scope.js";
+import { bindKnowledgeBase } from "./binding.js";
 import {
   createRuntimeBridgeHandlers,
   inspectRuntime,
   startRuntimeServer,
   stopRuntime,
-  runWindowsRuntimeInstaller,
+  runRuntimeInstaller,
 } from "./runtime.js";
 
 async function main(argv = process.argv.slice(2)) {
@@ -89,6 +91,24 @@ async function main(argv = process.argv.slice(2)) {
     return;
   }
 
+  if (command === "bind") {
+    const report = await bindKnowledgeBase(root, {
+      clients: args.clients,
+      initialize: args.initialize,
+      refresh: args.refresh,
+      template: args.template,
+      daemon: args.daemon,
+      installRuntime: args.installRuntime,
+      noStart: args.noStart,
+      apply: args.apply,
+      codexConfig: args.codexConfig,
+      cursorConfig: args.cursorConfig,
+    });
+    printJson(report);
+    if (!report.ok) process.exitCode = 2;
+    return;
+  }
+
   const config = mergeCliOptions(await loadConfig(root), args);
   const indexDir = config.indexDir;
 
@@ -103,11 +123,11 @@ async function main(argv = process.argv.slice(2)) {
       return;
     }
     if (action === "install") {
-      printJson(runWindowsRuntimeInstaller(root, { noStart: args.noStart }));
+      printJson(runRuntimeInstaller(root, { noStart: args.noStart }));
       return;
     }
     if (action === "uninstall") {
-      printJson(runWindowsRuntimeInstaller(root, { uninstall: true }));
+      printJson(runRuntimeInstaller(root, { uninstall: true }));
       return;
     }
     throw new Error(`Unknown runtime action: ${action}`);
@@ -165,6 +185,7 @@ async function main(argv = process.argv.slice(2)) {
     const index = await loadIndex(root, indexDir);
     const topK = args.topK ?? 8;
     const rerankRequested = args.rerank ?? config.reranker.provider !== "none";
+    const projectScope = cliProjectScope(args, config.projectGroups, config.scopeRoots);
     const lexicalResults = searchIndex(index, query, {
       topK: rerankRequested ? Math.max(topK, config.reranker.candidateLimit) : topK,
       maxChunksPerPath: args.maxChunksPerPath,
@@ -174,14 +195,15 @@ async function main(argv = process.argv.slice(2)) {
       maxOutputTokens: args.maxOutputTokens,
       weights: config.searchWeights,
       queryAliases: config.queryAliases,
+      projectScope,
     });
     if (!rerankRequested) {
-      printJson({ query, results: lexicalResults });
+      printJson({ query, scope: publicProjectScope(projectScope), results: lexicalResults });
       return;
     }
     const reranked = await rerankSearchResults(index, query, lexicalResults, config.reranker, { topK });
     const { results, ...reranker } = reranked;
-    printJson({ query, reranker, results });
+    printJson({ query, scope: publicProjectScope(projectScope), reranker, results });
     return;
   }
 
@@ -189,12 +211,14 @@ async function main(argv = process.argv.slice(2)) {
     const query = args.positionals.join(" ").trim();
     requireValue(query, "explain requires a query");
     const index = await loadIndex(root, indexDir);
+    const projectScope = cliProjectScope(args, config.projectGroups, config.scopeRoots);
     printJson(explainSearch(index, query, {
       topK: args.topK ?? 8,
       maxChunksPerPath: args.maxChunksPerPath,
       diversity: args.diversity,
       weights: config.searchWeights,
       queryAliases: config.queryAliases,
+      projectScope,
     }));
     return;
   }
@@ -203,8 +227,9 @@ async function main(argv = process.argv.slice(2)) {
     const pattern = args.positionals.join(" ").trim();
     requireValue(pattern, "grep requires a pattern");
     const index = await loadIndex(root, indexDir);
-    const results = grepIndex(index, pattern, { topK: args.topK ?? 20 });
-    printJson({ pattern, results });
+    const projectScope = cliProjectScope(args, config.projectGroups, config.scopeRoots);
+    const results = grepIndex(index, pattern, { topK: args.topK ?? 20, projectScope });
+    printJson({ pattern, scope: publicProjectScope(projectScope), results });
     return;
   }
 
@@ -244,7 +269,11 @@ async function main(argv = process.argv.slice(2)) {
   }
 
   if (command === "audit") {
-    const report = await auditWorkspace(root);
+    const report = await auditWorkspace(root, {
+      includes: config.includes,
+      exclude: config.exclude,
+      scopeRoots: config.scopeRoots,
+    });
     printJson(report);
     if (!report.ok) {
       process.exitCode = 2;
@@ -358,8 +387,10 @@ async function main(argv = process.argv.slice(2)) {
 
 function parseArgs(argv) {
   const args = {
+    clients: [],
     include: [],
     exclude: [],
+    projects: [],
     positionals: [],
   };
 
@@ -367,6 +398,12 @@ function parseArgs(argv) {
     const value = argv[index];
     if (value === "--root") {
       args.root = argv[++index];
+    } else if (value === "--client") {
+      args.clients.push(argv[++index]);
+    } else if (value === "--codex-config") {
+      args.codexConfig = argv[++index];
+    } else if (value === "--cursor-config") {
+      args.cursorConfig = argv[++index];
     } else if (value === "--include") {
       args.include.push(argv[++index]);
     } else if (value === "--exclude") {
@@ -375,6 +412,12 @@ function parseArgs(argv) {
       args.indexDir = argv[++index];
     } else if (value === "--top-k") {
       args.topK = positiveInteger(argv[++index], "--top-k");
+    } else if (value === "--project") {
+      args.projects.push(argv[++index]);
+    } else if (value === "--global") {
+      args.scope = "global";
+    } else if (value === "--no-common") {
+      args.includeCommon = false;
     } else if (value === "--max-chars") {
       args.maxChars = positiveInteger(argv[++index], "--max-chars");
     } else if (value === "--context-chars") {
@@ -439,6 +482,14 @@ function parseArgs(argv) {
       args.noFallback = true;
     } else if (value === "--no-start") {
       args.noStart = true;
+    } else if (value === "--initialize") {
+      args.initialize = true;
+    } else if (value === "--refresh") {
+      args.refresh = true;
+    } else if (value === "--install-runtime") {
+      args.installRuntime = true;
+    } else if (value === "--apply") {
+      args.apply = true;
     } else if (value === "--help" || value === "-h") {
       args.help = true;
     } else if (value === "--force") {
@@ -457,6 +508,16 @@ function parseArgs(argv) {
 
 function requireValue(value, message) {
   if (!value) throw new Error(message);
+}
+
+function cliProjectScope(args, projectGroups, scopeRoots) {
+  return resolveProjectScope({
+    scope: args.scope,
+    projects: args.projects,
+    includeCommon: args.includeCommon,
+    projectGroups,
+    scopeRoots,
+  });
 }
 
 function printJson(value) {
@@ -521,6 +582,8 @@ function directServerOptions(root, config) {
     exclude: config.exclude,
     weights: config.searchWeights,
     queryAliases: config.queryAliases,
+    projectGroups: config.projectGroups,
+    scopeRoots: config.scopeRoots,
     reranker: config.reranker,
     reloadCheckTtlMs: config.mcpCache.reloadCheckTtlMs,
     freshnessTtlMs: config.mcpCache.freshnessTtlMs,
@@ -534,11 +597,15 @@ function printHelp() {
 Commands:
   version [--json]                         Show product and runtime versions
   init   [--root DIR] [--template NAME]   Create an agent-memory or minimal skeleton
+  bind   [--root DIR] --client NAME        Preview or apply Codex/Cursor bindings
+         [--initialize] [--refresh] [--daemon] [--install-runtime] [--apply]
   index  [--root DIR] [--include PATH]    Build the local JSON index
   search <query> [--root DIR] [--rerank]  Deterministic field-aware hybrid search
          [--context-chars N] [--max-output-tokens N]
+         [--project NAME ...] [--no-common] [--global]
   explain <query> [--root DIR]            Explain query analysis and result scores
   grep   <pattern> [--root DIR]           Exact substring search
+         [--project NAME ...] [--no-common] [--global]
   read   <path-or-id> [--root DIR]        Read indexed chunks
   status [--root DIR] [--strict]          Show index metadata and freshness
          [--metrics]                      Include index size and density metrics
@@ -557,7 +624,7 @@ Commands:
   watch  [--root DIR] [--interval-ms N]   Auto-sync changed knowledge files
   daemon [--root DIR] [--watch]           Start shared loopback search runtime
   runtime status|stop [--root DIR]        Inspect or stop the shared runtime
-  runtime install|uninstall [--root DIR]  Manage Windows current-user Startup
+  runtime install|uninstall [--root DIR]  Manage Windows Startup or macOS LaunchAgent
   serve  [--root DIR] [--daemon]          Start MCP stdio server with optional bridge
 
 Defaults:

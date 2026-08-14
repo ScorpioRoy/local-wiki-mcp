@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { buildIndex } from "../src/indexer.js";
-import { explainSearch, searchIndex } from "../src/search.js";
+import { explainSearch, grepIndex, searchIndex } from "../src/search.js";
 
 const chunks = [
   {
@@ -225,6 +225,30 @@ test("searchIndex prefers stable wiki over old daily and de-duplicates daily top
   assert.equal(results.filter((result) => result.source_type === "daily").length, 1);
 });
 
+test("searchIndex classifies integrated agent-memory sources relative to scopeRoots", () => {
+  const index = buildIndex([
+    { id: "agent-memory/MEMORY.md#1", path: "agent-memory/MEMORY.md", heading: "记忆", text: "INTEGRATED_SOURCE" },
+    { id: "agent-memory/wiki/guide.md#1", path: "agent-memory/wiki/guide.md", heading: "稳定指南", text: "INTEGRATED_SOURCE" },
+    { id: "agent-memory/daily/old.md#1", path: "agent-memory/daily/2020-01/2020-01-01.md", heading: "任务1: 旧记录", text: "INTEGRATED_SOURCE" },
+    { id: "agent-memory/skills/workflow/SKILL.md#1", path: "agent-memory/skills/workflow/SKILL.md", heading: "工作流", text: "INTEGRATED_SOURCE" },
+    { id: "wiki/support-suite/stable.md#1", path: "wiki/support-suite/stable.md", heading: "共享事实", text: "INTEGRATED_SOURCE" },
+  ]);
+  const results = searchIndex(index, "INTEGRATED_SOURCE", {
+    topK: 10,
+    diversity: false,
+    scopeRoots: [".", "agent-memory"],
+    now: new Date("2026-08-12T00:00:00Z"),
+  });
+  const sourceTypes = Object.fromEntries(results.map((result) => [result.path, result.source_type]));
+
+  assert.equal(sourceTypes["agent-memory/MEMORY.md"], "memory");
+  assert.equal(sourceTypes["agent-memory/wiki/guide.md"], "wiki");
+  assert.equal(sourceTypes["agent-memory/daily/2020-01/2020-01-01.md"], "daily");
+  assert.equal(sourceTypes["agent-memory/skills/workflow/SKILL.md"], "rule");
+  assert.equal(sourceTypes["wiki/support-suite/stable.md"], "wiki");
+  assert(results.find((result) => result.path.includes("daily/")).scores.recency < 0.4);
+});
+
 test("searchIndex records source calibration in heterogeneous corpora", () => {
   const index = buildIndex([
     {
@@ -272,4 +296,152 @@ test("searchIndex can attach adjacent context and enforce an output token budget
   assert(results.length >= 1);
   assert.match(results[0].context.before, /前置背景/);
   assert.match(results[0].context.after, /后续验证/);
+});
+
+test("project scope keeps current-project and common knowledge while excluding other projects", () => {
+  const scopedIndex = buildIndex([
+    { id: "wiki/legacy-app/questionnaire.md#1", path: "wiki/legacy-app/questionnaire.md", heading: "Legacy App 问卷需求", text: "问卷需求使用老系统模板。" },
+    { id: "wiki/support-service/questionnaire.md#1", path: "wiki/support-service/questionnaire.md", heading: "Project B 问卷需求", text: "问卷需求使用满意度事件。" },
+    { id: "wiki/common/requirements.md#1", path: "wiki/common/requirements.md", heading: "需求事实源", text: "问卷需求先核对当前项目事实源。" },
+    { id: "daily/2026-08/2026-08-07.md#1", path: "daily/2026-08/2026-08-07.md", heading: "任务1: Legacy App 问卷", text: "- 项目·模块: Legacy App · 问卷\n- 完成内容: 问卷需求梳理。" },
+    { id: "daily/2026-08/2026-08-07.md#2", path: "daily/2026-08/2026-08-07.md", heading: "任务2: Project B 问卷", text: "- 项目·模块: support-service · 问卷\n- 完成内容: 问卷需求梳理。" },
+  ]);
+
+  const results = searchIndex(scopedIndex, "问卷需求", {
+    topK: 10,
+    diversity: false,
+    projects: ["legacy-app"],
+    includeCommon: true,
+  });
+
+  assert(results.some((result) => result.path === "wiki/legacy-app/questionnaire.md"));
+  assert(results.some((result) => result.path === "wiki/common/requirements.md"));
+  assert(results.some((result) => result.heading.includes("Legacy App 问卷")));
+  assert(!results.some((result) => result.path.startsWith("wiki/support-service/")));
+  assert(!results.some((result) => result.heading.includes("Project B 问卷")));
+});
+
+test("project scope prevents adjacent daily context from leaking another project", () => {
+  const scopedIndex = buildIndex([
+    { id: "daily/2026-08/2026-08-07.md#1", path: "daily/2026-08/2026-08-07.md", heading: "任务1: Project B", text: "- 项目·模块: support-service · 问卷\nProject B_PRIVATE_CONTEXT" },
+    { id: "daily/2026-08/2026-08-07.md#2", path: "daily/2026-08/2026-08-07.md", heading: "任务2: Legacy App", text: "- 项目·模块: Legacy App · 问卷\nBJ_TARGET_CONTEXT" },
+    { id: "daily/2026-08/2026-08-07.md#3", path: "daily/2026-08/2026-08-07.md", heading: "任务3: Project B", text: "- 项目·模块: support-service · 问卷\nProject B_AFTER_CONTEXT" },
+  ]);
+
+  const results = searchIndex(scopedIndex, "BJ_TARGET_CONTEXT", {
+    topK: 1,
+    projects: ["legacy-app"],
+    contextChars: 400,
+  });
+
+  assert.equal(results[0].heading, "任务2: Legacy App");
+  assert.equal(results[0].context, undefined);
+});
+
+test("grepIndex applies the same project scope as semantic search", () => {
+  const scopedIndex = buildIndex([
+    { id: "wiki/legacy-app/api.md#1", path: "wiki/legacy-app/api.md", heading: "接口", text: "QUESTIONNAIRE_API" },
+    { id: "wiki/support-web/api.md#1", path: "wiki/support-web/api.md", heading: "接口", text: "QUESTIONNAIRE_API" },
+  ]);
+
+  const results = grepIndex(scopedIndex, "QUESTIONNAIRE_API", { projects: ["legacy-app"] });
+
+  assert.deepEqual(results.map((result) => result.path), ["wiki/legacy-app/api.md"]);
+});
+
+test("project scope supports an explicit cross-project allowlist and can exclude common knowledge", () => {
+  const scopedIndex = buildIndex([
+    { id: "wiki/legacy-app/link.md#1", path: "wiki/legacy-app/link.md", heading: "联调", text: "CROSS_PROJECT_LINK" },
+    { id: "wiki/support-web/link.md#1", path: "wiki/support-web/link.md", heading: "联调", text: "CROSS_PROJECT_LINK" },
+    { id: "wiki/support-service/link.md#1", path: "wiki/support-service/link.md", heading: "联调", text: "CROSS_PROJECT_LINK" },
+    { id: "wiki/common/link.md#1", path: "wiki/common/link.md", heading: "通用联调", text: "CROSS_PROJECT_LINK" },
+  ]);
+
+  const results = grepIndex(scopedIndex, "CROSS_PROJECT_LINK", {
+    projects: ["legacy-app", "support-web"],
+    includeCommon: false,
+  });
+
+  assert.deepEqual(results.map((result) => result.path), [
+    "wiki/legacy-app/link.md",
+    "wiki/support-web/link.md",
+  ]);
+});
+
+test("project groups canonicalize repository ids and retain historical daily metadata", () => {
+  const scopedIndex = buildIndex([
+    { id: "wiki/support-suite/requirements.md#1", path: "wiki/support-suite/requirements.md", heading: "support-suite", text: "SUPPORT_SUITE_GROUP_SCOPE" },
+    { id: "wiki/legacy-app/requirements.md#1", path: "wiki/legacy-app/requirements.md", heading: "Legacy App", text: "SUPPORT_SUITE_GROUP_SCOPE" },
+    { id: "daily/2026-08/2026-08-07.md#1", path: "daily/2026-08/2026-08-07.md", heading: "历史前端", text: "- 项目·模块: support-web · 问卷\nSUPPORT_SUITE_GROUP_SCOPE" },
+  ]);
+  const projectGroups = {
+    "support-suite": ["support-web", "support-service", "data-sync", "admin-service"],
+  };
+
+  const results = searchIndex(scopedIndex, "SUPPORT_SUITE_GROUP_SCOPE", {
+    topK: 10,
+    diversity: false,
+    projects: ["support-web"],
+    projectGroups,
+  });
+  const crossProject = grepIndex(scopedIndex, "SUPPORT_SUITE_GROUP_SCOPE", {
+    projects: ["support-suite", "legacy-app"],
+    projectGroups,
+  });
+
+  assert(results.some((result) => result.path === "wiki/support-suite/requirements.md"));
+  assert(results.some((result) => result.heading === "历史前端"));
+  assert(!results.some((result) => result.path.startsWith("wiki/legacy-app/")));
+  assert(crossProject.some((result) => result.path.startsWith("wiki/support-suite/")));
+  assert(crossProject.some((result) => result.path.startsWith("wiki/legacy-app/")));
+});
+
+test("project scope treats personal wiki as common methods instead of project facts", () => {
+  const scopedIndex = buildIndex([
+    { id: "wiki/support-suite/shared.md#1", path: "wiki/support-suite/shared.md", heading: "共享 support-suite", text: "MULTI_ROOT_SCOPE" },
+    { id: "agent-memory/wiki/support-suite/private.md#1", path: "agent-memory/wiki/support-suite/private.md", heading: "个人 support-suite", text: "MULTI_ROOT_SCOPE" },
+    { id: "agent-memory/wiki/common/private.md#1", path: "agent-memory/wiki/common/private.md", heading: "个人 common", text: "MULTI_ROOT_SCOPE" },
+    { id: "agent-memory/wiki/legacy-app/private.md#1", path: "agent-memory/wiki/legacy-app/private.md", heading: "个人 Legacy App", text: "MULTI_ROOT_SCOPE" },
+  ]);
+
+  const results = searchIndex(scopedIndex, "MULTI_ROOT_SCOPE", {
+    topK: 10,
+    diversity: false,
+    projects: ["data-sync"],
+    projectGroups: {
+      "support-suite": ["support-web", "support-service", "data-sync", "admin-service"],
+    },
+    scopeRoots: [".", "agent-memory"],
+  });
+
+  assert(results.some((result) => result.path === "wiki/support-suite/shared.md"));
+  assert(results.some((result) => result.path === "agent-memory/wiki/common/private.md"));
+  assert(!results.some((result) => result.path === "agent-memory/wiki/support-suite/private.md"));
+  assert(!results.some((result) => result.path === "agent-memory/wiki/legacy-app/private.md"));
+
+  const businessOnly = searchIndex(scopedIndex, "MULTI_ROOT_SCOPE", {
+    topK: 10,
+    diversity: false,
+    project: "support-suite",
+    include_common: false,
+    scopeRoots: [".", "agent-memory"],
+  });
+  assert.deepEqual(businessOnly.map((result) => result.path), ["wiki/support-suite/shared.md"]);
+});
+
+test("shared common project excludes personal common metadata when include_common is false", () => {
+  const scopedIndex = buildIndex([
+    { id: "wiki/common/shared.md#1", path: "wiki/common/shared.md", heading: "共享公共知识", text: "COMMON_NAMESPACE" },
+    { id: "agent-memory/wiki/common/private.md#1", path: "agent-memory/wiki/common/private.md", heading: "个人方法", text: "project: common\nCOMMON_NAMESPACE" },
+    { id: "agent-memory/daily/old.md#1", path: "agent-memory/daily/2026-08/2026-08-01.md", heading: "旧任务", text: "项目·模块: common · rules\nCOMMON_NAMESPACE" },
+  ]);
+  const results = searchIndex(scopedIndex, "COMMON_NAMESPACE", {
+    topK: 10,
+    diversity: false,
+    project: "common",
+    include_common: false,
+    scopeRoots: [".", "agent-memory"],
+  });
+
+  assert.deepEqual(results.map((result) => result.path), ["wiki/common/shared.md"]);
 });

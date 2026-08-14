@@ -2,6 +2,7 @@ import { createIndexStore } from "./index-store.js";
 import { grepIndex, readFromIndex, searchIndex } from "./search.js";
 import { rerankSearchResults } from "./reranker.js";
 import { PRODUCT_VERSION } from "./version.js";
+import { publicProjectScope, resolveProjectScope } from "./project-scope.js";
 
 export function listTools() {
   return [
@@ -19,6 +20,10 @@ export function listTools() {
           context_chars: { type: "number", description: "Adjacent context characters per result. Default 0." },
           max_output_tokens: { type: "number", description: "Approximate result token budget. Default 2000." },
           rerank: { type: "boolean", description: "Use the configured loopback local reranker. Default follows config." },
+          scope: { type: "string", enum: ["global", "project"], description: "Search globally or restrict results to explicit projects. Defaults to project when project/projects is supplied." },
+          project: { type: "string", description: "Single project id, for example legacy-app. Project scope also retains common knowledge by default." },
+          projects: { type: "array", items: { type: "string" }, description: "Explicit project allowlist for cross-project work." },
+          include_common: { type: "boolean", description: "Include common wiki, rules, templates, and product docs in project scope. Default true." },
         },
         required: ["query"],
       },
@@ -31,6 +36,10 @@ export function listTools() {
         properties: {
           pattern: { type: "string", description: "Exact text to find." },
           top_k: { type: "number", description: "Maximum result count. Default 20." },
+          scope: { type: "string", enum: ["global", "project"], description: "Search globally or restrict exact matches to explicit projects." },
+          project: { type: "string", description: "Single project id, for example legacy-app." },
+          projects: { type: "array", items: { type: "string" }, description: "Explicit project allowlist for cross-project work." },
+          include_common: { type: "boolean", description: "Include common knowledge in project scope. Default true." },
         },
         required: ["pattern"],
       },
@@ -76,6 +85,8 @@ export function createToolHandlers(options = {}) {
   const inspect = options.inspectFreshness ?? ((index, inspectOptions) => store.getFreshness(index, inspectOptions));
   const weights = options.weights;
   const queryAliases = options.queryAliases;
+  const projectGroups = options.projectGroups;
+  const scopeRoots = options.scopeRoots;
   const rerankerConfig = options.reranker ?? { provider: "none" };
 
   return {
@@ -95,6 +106,7 @@ export function createToolHandlers(options = {}) {
       );
       const index = await load();
       const freshness = await inspect(index, { force: false });
+      const projectScope = resolveProjectScope({ ...args, projectGroups, scopeRoots });
       const rerankRequested = args.rerank ?? rerankerConfig.provider !== "none";
       const lexicalResults = searchIndex(index, query, {
         topK: rerankRequested ? Math.max(topK, rerankerConfig.candidateLimit ?? 20) : topK,
@@ -105,6 +117,7 @@ export function createToolHandlers(options = {}) {
         maxOutputTokens: rerankRequested ? undefined : maxOutputTokens,
         weights,
         queryAliases,
+        projectScope,
       });
       const reranked = rerankRequested
         ? await rerankSearchResults(index, query, lexicalResults, rerankerConfig, {
@@ -119,6 +132,7 @@ export function createToolHandlers(options = {}) {
         ...(rerankRequested ? { reranker } : {}),
         confidence: results[0]?.confidence ?? null,
         output_budget_tokens: maxOutputTokens,
+        scope: publicProjectScope(projectScope),
         results,
       });
     },
@@ -126,10 +140,12 @@ export function createToolHandlers(options = {}) {
     async grep_wiki(args) {
       const pattern = requiredString(args.pattern, "pattern");
       const index = await load();
+      const projectScope = resolveProjectScope({ ...args, projectGroups, scopeRoots });
       const results = grepIndex(index, pattern, {
         topK: optionalPositiveInteger(args.top_k ?? args.topK, 20, "top_k"),
+        projectScope,
       });
-      return jsonContent({ pattern, results });
+      return jsonContent({ pattern, scope: publicProjectScope(projectScope), results });
     },
 
     async read_wiki(args) {
@@ -181,7 +197,7 @@ export function createMcpServer(options = {}) {
           protocolVersion: "2024-11-05",
           capabilities: { tools: {} },
           serverInfo: { name: "local-wiki-mcp", version: PRODUCT_VERSION },
-          instructions: "Use search_wiki first for local knowledge. Use grep_wiki for exact identifiers and read_wiki for full indexed chunks. Treat results as read-only source references.",
+          instructions: "Use search_wiki first for local knowledge. For project work, pass project or projects so search_wiki and grep_wiki enforce project isolation; omit them only for an intentional global search. Use read_wiki for full indexed chunks. Treat results as read-only source references.",
         });
       }
 

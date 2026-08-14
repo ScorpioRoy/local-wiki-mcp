@@ -9,6 +9,7 @@ const localOnly = process.argv.includes("--local");
 const pkg = JSON.parse(await readFile(path.join(root, "package.json"), "utf8"));
 const versionSource = await readFile(path.join(root, "src", "version.js"), "utf8");
 const changelog = await readFile(path.join(root, "CHANGELOG.md"), "utf8");
+const installation = await readFile(path.join(root, "INSTALLATION.md"), "utf8");
 const lock = JSON.parse(await readFile(path.join(root, "package-lock.json"), "utf8"));
 const errors = [];
 const warnings = [];
@@ -20,6 +21,9 @@ check(lock.version === pkg.version && lock.packages?.[""]?.version === pkg.versi
 check(pkg.private === false, "package must not be private.");
 check(pkg.license === "MIT", "package license must be MIT.");
 check(pkg.engines?.node === ">=20.0.0", "Node.js engine support must remain explicit.");
+check(pkg.publishConfig?.access === "public", "publishConfig.access must be public.");
+check(pkg.publishConfig?.provenance === true, "publishConfig.provenance must be enabled.");
+check(!/<LOCAL_WIKI_REPOSITORY>/i.test(installation), "INSTALLATION.md still contains a repository placeholder.");
 
 for (const file of pkg.files ?? []) {
   await access(path.join(root, file.replace(/\/$/, ""))).catch(() => {
@@ -43,6 +47,11 @@ if (!git.available) {
   (localOnly ? warnings : errors).push("Package directory is not an initialized Git repository.");
 } else {
   if (git.dirty) (localOnly ? warnings : errors).push("Git worktree is not clean.");
+  const configuredRemote = normalizeGitUrl(pkg.repository?.url);
+  const actualRemote = normalizeGitUrl(git.remote);
+  if (configuredRemote && actualRemote && configuredRemote !== actualRemote) {
+    errors.push("package.json repository.url does not match the Git origin remote.");
+  }
   if (!localOnly && git.tag !== `v${pkg.version}`) {
     errors.push(`Release commit must be tagged v${pkg.version}.`);
   }
@@ -88,7 +97,16 @@ function output(result) {
 }
 
 function isReleaseUrl(value) {
-  return typeof value === "string" && /^https:\/\/[^<>\s]+$/i.test(value);
+  return typeof value === "string" &&
+    /^https:\/\/[^<>\s]+$/i.test(value) &&
+    !/\b(?:example\.com|localhost)\b/i.test(value);
+}
+
+function normalizeGitUrl(value) {
+  if (typeof value !== "string" || !value.trim()) return null;
+  let normalized = value.trim().replace(/^git\+/, "");
+  normalized = normalized.replace(/^git@github\.com:/i, "https://github.com/");
+  return normalized.replace(/\.git$/i, "").replace(/\/$/, "").toLowerCase();
 }
 
 function escapeRegExp(value) {

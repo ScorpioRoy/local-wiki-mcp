@@ -2,11 +2,11 @@
 
 ## Clean Tarball Installation
 
-`npm run test:pack` creates a real `.tgz`, installs it into a clean consumer project, checks packaged files, initializes a knowledge base, builds an index, and runs smoke tests.
+`npm run test:pack` creates a real `.tgz`, SHA-256 file, and manifest, verifies refusal to overwrite, installs the tarball into a clean consumer project, checks packaged files, initializes a knowledge base, builds an index, and runs smoke tests. `npm run release:package` writes the same controlled-sharing bundle to `dist/`.
 
 ## Cross-Platform Matrix
 
-The CI matrix runs Windows, macOS, and Linux with Node.js 20, 22, and 24. Every job uses `npm ci`, unit tests, release checks, and clean-package installation.
+The CI matrix runs Windows, macOS, and Linux with Node.js 20, 22, and 24. Every job uses `npm ci`, unit tests, release checks, and clean-package installation. The macOS Node.js 24 job also installs a real current-user LaunchAgent, waits for daemon reachability, runs smoke, and uninstalls it.
 
 ## Watch Soak
 
@@ -14,7 +14,7 @@ The CI matrix runs Windows, macOS, and Linux with Node.js 20, 22, and 24. Every 
 
 ## Provenance Release
 
-A tagged release runs strict metadata and Git checks before `npm publish --provenance`. Repository, homepage, bugs, security contact, package ownership, and credentials must be real.
+A tagged release requires a publicly visible GitHub repository and runs strict metadata and Git checks before publishing the generated tarball with npm provenance. The same `.tgz`, SHA-256 file, and manifest are attached to the GitHub Release. Repository, homepage, bugs, security contact, package ownership, and credentials must be real.
 
 ## Reviewed Rollback
 

@@ -73,6 +73,26 @@ test("discoverFiles supports product exclude patterns", async () => {
   });
 });
 
+test("discoverFiles supports caller-specific file extensions", async () => {
+  await withTempDir(async (root) => {
+    await mkdir(path.join(root, "rules", "private"), { recursive: true });
+    await writeFile(path.join(root, "rules", "memory.mdc"), "Use local-wiki.");
+    await writeFile(path.join(root, "rules", "config.json"), "{}");
+    await writeFile(path.join(root, "rules", "guide.md"), "# Guide");
+    await writeFile(path.join(root, "rules", "private", "secret.json"), "{}");
+
+    const files = await discoverFiles(root, ["rules"], {
+      exclude: ["rules/private"],
+      extensions: new Set([".mdc", ".json"]),
+    });
+
+    assert.deepEqual(files, [
+      "rules/config.json",
+      "rules/memory.mdc",
+    ]);
+  });
+});
+
 test("discoverFiles ignores include paths outside the root even with shared prefixes", async () => {
   await withTempDir(async (root) => {
     const sibling = `${root}-sibling`;

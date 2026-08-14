@@ -1,5 +1,9 @@
 # local-wiki-mcp
 
+[![CI](https://github.com/ScorpioRoy/local-wiki-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/ScorpioRoy/local-wiki-mcp/actions/workflows/ci.yml)
+[![npm](https://img.shields.io/npm/v/local-wiki-mcp.svg)](https://www.npmjs.com/package/local-wiki-mcp)
+[![license](https://img.shields.io/npm/l/local-wiki-mcp.svg)](LICENSE)
+
 `local-wiki-mcp` 是面向 Codex、Cursor 和其他 MCP 客户端的本地 Markdown 知识库检索工具。它默认只在本机运行，不需要外接大模型 API key、托管服务、Python、原生数据库或向量数据库。
 
 English documentation: [README.en.md](README.en.md)
@@ -25,7 +29,19 @@ English documentation: [README.en.md](README.en.md)
 
 ## 快速开始
 
-在源码目录进行本地全局安装：
+安装公开发布版本：
+
+```powershell
+npm install -g local-wiki-mcp@0.7.0
+```
+
+离线或受控环境也可以安装 GitHub Release 附带 SHA-256 和 manifest 的 `.tgz`：
+
+```powershell
+npm install -g .\local-wiki-mcp-0.7.0.tgz
+```
+
+也可在已审核源码目录进行本地全局安装：
 
 ```powershell
 npm install -g .
@@ -55,6 +71,38 @@ local-wiki repair --root D:\path\to\agent-memory --force
 local-wiki doctor --root D:\path\to\agent-memory --verbose
 ```
 
+完整的 `.tgz`、源码、npm 安装边界和卸载说明见 [INSTALLATION.md](INSTALLATION.md)。
+
+## 一键绑定 Codex 与 Cursor
+
+`bind` 默认只预览，不创建文件、不刷新索引，也不修改客户端配置：
+
+```powershell
+local-wiki bind --root D:\path\to\agent-memory --client codex --client cursor --initialize --refresh --daemon --install-runtime
+```
+
+确认根目录、配置路径和动作后才显式应用：
+
+```powershell
+local-wiki bind --root D:\path\to\agent-memory --client codex --client cursor --initialize --refresh --daemon --install-runtime --apply
+```
+
+预览会只读检查知识库与两个客户端的现有配置；冲突时返回 `ok: false` 且保持零写入。`--initialize` 默认只补齐轻量 `agent-memory` 骨架，不部署完整团队 Wiki、项目映射、Rules、Skills 或 Hooks；已有知识库通常省略该选项。`--refresh` 构建或刷新派生索引。写客户端配置前会在同目录创建备份；未托管的同名 Codex section、不同的 Cursor `local-wiki` 项或无效配置都会阻止写入。绑定结果使用当前 Node.js 的绝对路径，避免 GUI 客户端缺少终端 PATH。
+
+Windows 和 macOS 薄包装脚本：
+
+```powershell
+$packageRoot = npm root -g
+powershell -File "$packageRoot\local-wiki-mcp\scripts\Bind-LocalWikiKnowledgeBase.ps1" -Root D:\path\to\agent-memory -Initialize -Refresh -Daemon
+```
+
+```bash
+PACKAGE_ROOT=$(npm root -g)
+sh "$PACKAGE_ROOT/local-wiki-mcp/scripts/bind-knowledge-base-macos.sh" --root "$HOME/agent-memory" --client codex --client cursor --initialize --refresh --daemon
+```
+
+两个脚本同样默认预览；Windows 增加 `-Apply`、macOS 增加 `--apply` 才写入。
+
 ## 配置文件
 
 在知识库根目录创建 `.local-wiki.json`：
@@ -62,6 +110,7 @@ local-wiki doctor --root D:\path\to\agent-memory --verbose
 ```json
 {
   "includes": ["wiki", "MEMORY.md"],
+  "scopeRoots": ["."],
   "exclude": ["raw/private", "*.draft.md"],
   "indexDir": ".local-wiki-index",
   "maxChunkChars": 2400,
@@ -74,6 +123,9 @@ local-wiki doctor --root D:\path\to\agent-memory --verbose
   },
   "queryAliases": {
     "旧知识库": ["qmd", "local-wiki", "迁移"]
+  },
+  "projectGroups": {
+    "support-suite": ["case-service", "data-sync", "support-web", "support-service", "admin-service", "workorder-service", "workorder-web"]
   },
   "mcpCache": {
     "reloadCheckTtlMs": 1000,
@@ -108,7 +160,11 @@ local-wiki index --root . --include wiki --index-dir .custom-index --max-chars 1
 
 默认索引 `wiki` 和 `MEMORY.md`。内置跳过目录包括 `.git`、`.state`、`.local-wiki-index` 和 `node_modules`。
 
+`scopeRoots` 声明项目路径和 common 路径的相对知识根，默认 `["."]`，因此继续识别根目录下的 `wiki/<project>/`。共享 Git Wiki 根内再嵌套个人 `agent-memory/` 时可配置 `[".", "agent-memory"]`，同时识别 `wiki/<project>/` 与 `agent-memory/wiki/<project>/`。该配置只控制项目 scope 识别；实际索引内容仍由 `includes` 决定。数组必须非空，且所有项必须是不得越出知识库根的相对路径。
+
 `queryAliases` 用于维护当前知识库特有的确定性同义词。只有查询包含左侧短语时才展开右侧词项；alias 使用独立 BM25 与路径证据，不调用模型。建议只配置经过 eval 验证的稳定领域词，避免加入过宽的通用词。
+
+`projectGroups` 用于表达一个业务项目由多个代码仓库组成。传业务项目 ID 或任一成员仓库 ID 时，响应统一回显业务项目 ID，并匹配业务项目 Wiki、成员仓库旧路径及历史 daily 项目元数据。同一成员只能属于一个项目组；按需依赖不要加入固定成员，应在查询时通过 `projects` 显式放开。
 
 启动 MCP 前建议执行：
 
@@ -125,13 +181,16 @@ local-wiki status --root . --strict --metrics
 ```text
 version [--json]                         显示产品、索引和运行时版本
 init    [--root DIR] [--template NAME]   创建 agent-memory 或 minimal 骨架
+bind    [--root DIR] --client NAME        预览或应用 Codex/Cursor 知识库绑定
 index   [--root DIR] [--include PATH]    完整构建本地 JSON 索引
 sync    [--root DIR] [--include PATH]    增量刷新索引
 context [--root DIR] [--days N]          输出紧凑启动上下文
         [--max-tasks N] [--max-chars N]
 search  <query> [--root DIR] [--rerank]  混合检索并可选本地语义重排
+        [--project NAME ...] [--no-common] [--global]
 explain <query> [--root DIR]             解释查询分析和结果评分
 grep    <pattern> [--root DIR]           精确子字符串检索
+        [--project NAME ...] [--no-common] [--global]
 read    <path-or-id> [--root DIR]        读取索引片段
 status  [--root DIR] [--strict]          查看索引元数据和过期状态
         [--metrics]                      输出索引大小和密度指标
@@ -144,7 +203,7 @@ smoke   [--root DIR]                     验证索引和 MCP 检索是否可用
 watch   [--root DIR] [--interval-ms N]   自动同步知识文件变化
 daemon  [--root DIR] [--watch]           启动共享 loopback 检索运行时
 runtime status|stop [--root DIR]         查看或停止共享运行时
-runtime install|uninstall [--root DIR]   管理 Windows 当前用户启动项
+runtime install|uninstall [--root DIR]   管理 Windows Startup 或 macOS LaunchAgent
 config  codex|cursor [--root DIR]        输出 MCP 配置片段
 config  validate [--root DIR]            校验配置值和源路径
 audit   [--root DIR]                     检查乱码和遗留 qmd 规则
@@ -162,6 +221,7 @@ serve   [--root DIR] [--watch]           启动 MCP stdio 服务
 ```json
 {
   "query": "Codex MCP 本地知识库",
+  "project": "legacy-app",
   "top_k": 8,
   "max_chunks_per_path": 1,
   "diversity": true,
@@ -193,8 +253,34 @@ serve   [--root DIR] [--watch]           启动 MCP stdio 服务
 ```json
 {
   "pattern": "config.toml",
+  "project": "legacy-app",
   "top_k": 20
 }
+```
+
+### 多项目检索隔离
+
+项目任务应向 `search_wiki` 和 `grep_wiki` 传 `project`，跨项目联动则传 `projects` 白名单。项目范围是结果返回前的硬过滤：只保留每个 `scopeRoots` 下的 `wiki/<project>/`、chunk 内 `项目·模块:` / `project:` / `projects:` 匹配的内容，以及默认启用的 common 知识；同一 daily 文件中的其他项目 chunk 和相邻上下文也会被排除。
+
+```json
+{
+  "query": "问卷需求",
+  "projects": ["support-web", "support-service"],
+  "include_common": true
+}
+```
+
+未传 `project` / `projects` 时保持兼容，仍执行全库检索；也可显式传 `"scope": "global"`。只有明确不需要公共规则、模板和工具知识时才设置 `"include_common": false`。响应中的 `scope` 会回显实际项目白名单和 common 状态，便于调用方核验。
+
+配置 `projectGroups` 后，成员仓库 ID 会规范化为业务项目。例如 `project: "support-web"` 可回显并检索为 `project: "support-suite"`；Legacy App 等按需依赖不应加入组内，联动时使用 `projects: ["support-suite", "legacy-app"]`。
+
+命令行等价用法：
+
+```powershell
+local-wiki search "问卷需求" --root . --project legacy-app
+local-wiki grep "QUESTIONNAIRE_API" --root . --project legacy-app --no-common
+local-wiki search "联调问题" --root . --project support-web --project support-service
+local-wiki search "全库问题" --root . --global
 ```
 
 ### `read_wiki`
@@ -203,7 +289,7 @@ serve   [--root DIR] [--watch]           启动 MCP stdio 服务
 
 ```json
 {
-  "target": "wiki/cursor/memory-wiki-system.md",
+  "target": "wiki/common/memory-wiki-system.md",
   "max_chars": 12000
 }
 ```
@@ -259,7 +345,13 @@ $packageRoot = npm root -g
 powershell -File "$packageRoot\local-wiki-mcp\scripts\install-windows-watch.ps1" -Root D:\path\to\agent-memory
 ```
 
-安装脚本会先确认 `local-wiki` 命令可用，日志写入知识库的 `.state/local-wiki-runtime.log`，达到 5MB 后保留一个轮转副本。也可使用 `local-wiki runtime install --root .`；`runtime uninstall` 移除启动项。
+macOS 使用当前用户 LaunchAgent：
+
+```bash
+local-wiki runtime install --root "$HOME/agent-memory"
+```
+
+Windows 日志写入知识库的 `.state/local-wiki-runtime.log` 并在达到 5MB 后轮转；macOS LaunchAgent 也写入同一路径。`runtime uninstall` 仅移除当前用户 Startup/LaunchAgent，不删除 Markdown 或索引。
 
 ## 可选本地语义重排
 
@@ -329,7 +421,7 @@ local-wiki config cursor --root D:\path\to\agent-memory --daemon
 }
 ```
 
-配置生成命令只输出片段，不会自动修改 Codex 或 Cursor 的全局配置。
+配置生成命令只输出片段，不会自动修改 Codex 或 Cursor 的全局配置。需要安全合并配置时使用默认预览、显式 `--apply` 的 `local-wiki bind`。
 
 ## Benchmark 与 Eval
 
@@ -345,7 +437,7 @@ local-wiki bench --root . --query "local-wiki Product v1.4" --iterations 20
 [
   {
     "query": "Codex MCP 本地知识库",
-    "expected": ["wiki/cursor/memory-wiki-system.md"],
+    "expected": ["wiki/common/memory-wiki-system.md"],
     "top_k": 3
   }
 ]
@@ -380,7 +472,8 @@ npm run soak:watch
 npm run bench:scale
 ```
 
-- `test:pack` 会生成真实 `.tgz`，安装到全新临时项目，再执行 init、配置校验、索引和 smoke。
+- `test:pack` 会通过正式发布包生成器创建真实 `.tgz`、SHA-256 和 manifest，校验后安装到全新临时项目，再执行 init、配置校验、索引和 smoke。
+- `release:package` 在 `dist/` 生成拒绝覆盖的 `.tgz`、SHA-256 和 manifest，供内部受控分享。
 - `test:soak` 是短时 CI 变更测试。
 - `soak:watch` 默认运行 12 小时。
 - 发布流程、远程元数据、npm provenance、标签和回滚要求见 [RELEASING.md](RELEASING.md)。

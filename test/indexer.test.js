@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, rm, symlink, unlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rename, rm, symlink, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
@@ -119,6 +119,35 @@ test("saveIndex writes compact JSON and loadIndex validates it", async () => {
     assert.doesNotMatch(raw, /\n  "/);
     assert.equal(loaded.version, CURRENT_INDEX_VERSION);
     assert.equal(validateIndex(loaded), loaded);
+  });
+});
+
+test("saveIndex retries transient Windows rename failures", async () => {
+  await withTempDir(async (root) => {
+    const index = buildIndex([{
+      id: "wiki/index.md#1",
+      path: "wiki/index.md",
+      heading: "Index",
+      text: "Retry a temporarily locked index file.",
+    }]);
+    let attempts = 0;
+
+    await saveIndex(root, index, ".local-wiki-index", {
+      renameAttempts: 3,
+      renameDelayMs: 0,
+      rename: async (source, destination) => {
+        attempts += 1;
+        if (attempts < 3) {
+          const error = new Error("file is temporarily locked");
+          error.code = attempts === 1 ? "EPERM" : "EBUSY";
+          throw error;
+        }
+        await rename(source, destination);
+      },
+    });
+
+    assert.equal(attempts, 3);
+    assert.equal((await loadIndex(root)).version, CURRENT_INDEX_VERSION);
   });
 });
 

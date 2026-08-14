@@ -36,6 +36,7 @@ test("initKnowledgeBase creates a minimal skeleton without overwriting files", a
     assert.match(await readFile(path.join(root, "daily", "README.md"), "utf8"), /Daily 工作记录/);
     const config = JSON.parse(await readFile(path.join(root, ".local-wiki.json"), "utf8"));
     assert.deepEqual(config.includes, ["wiki", "MEMORY.md"]);
+    assert.deepEqual(config.scopeRoots, ["."]);
     assert.equal(config.indexDir, ".local-wiki-index");
     assert.equal(config.mcpCache.idleUnloadMs, 300000);
     assert.equal(config.reranker.provider, "none");

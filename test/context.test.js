@@ -28,8 +28,33 @@ test("extractTasks reads task headings and compact fields", () => {
     date: "2026-07-16",
     number: 1,
     title: "第一项",
+    status: "active",
     project: "demo · 搜索",
     pending: "等待验证",
+  });
+});
+
+test("buildStartupContext excludes superseded daily tasks", async () => {
+  await withTempDir(async (root) => {
+    await mkdir(path.join(root, "daily", "2026-07"), { recursive: true });
+    await writeFile(path.join(root, "daily", "2026-07", "2026-07-16.md"), [
+      "## 任务1: 已关闭迁移",
+      "- 状态: superseded",
+      "- supersededBy: daily/2026-07/2026-07-16.md#任务2",
+      "- 遗留/待办: 等待迁移",
+      "",
+      "## 任务2: 当前整合",
+      "- 状态: active",
+      "- 遗留/待办: 继续验证",
+    ].join("\n"));
+
+    const report = await buildStartupContext(root, {
+      now: new Date("2026-07-16T12:00:00+08:00"),
+      days: 1,
+      maxTasks: 10,
+    });
+    assert.match(report.text, /当前整合/);
+    assert.doesNotMatch(report.text, /已关闭迁移|等待迁移/);
   });
 });
 

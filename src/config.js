@@ -1,10 +1,12 @@
 import { access, readFile } from "node:fs/promises";
 import path from "node:path";
+import { normalizeProjectGroups, normalizeScopeRoots } from "./project-scope.js";
 
 export const CONFIG_FILE_NAME = ".local-wiki.json";
 
 export const DEFAULT_CONFIG = {
   includes: ["wiki", "MEMORY.md"],
+  scopeRoots: ["."],
   indexDir: ".local-wiki-index",
   exclude: [],
   maxChunkChars: 2400,
@@ -16,6 +18,7 @@ export const DEFAULT_CONFIG = {
     source: 0.75,
   },
   queryAliases: {},
+  projectGroups: {},
   mcpCache: {
     reloadCheckTtlMs: 1000,
     freshnessTtlMs: 5000,
@@ -107,17 +110,20 @@ export function validateConfigValue(value, options = {}) {
 
   checkUnknownKeys(value, new Set([
     "includes",
+    "scopeRoots",
     "indexDir",
     "exclude",
     "maxChunkChars",
     "searchWeights",
     "queryAliases",
+    "projectGroups",
     "mcpCache",
     "reranker",
     "runtime",
     "watch",
   ]), "$", warnings);
   checkStringArray(value, "includes", errors);
+  checkScopeRoots(value.scopeRoots, errors, options.root);
   checkStringArray(value, "exclude", errors);
   checkNonEmptyString(value, "indexDir", errors);
   checkNumber(value, "maxChunkChars", errors, { integer: true, minimum: 1 });
@@ -125,6 +131,7 @@ export function validateConfigValue(value, options = {}) {
     minimum: 0,
   });
   checkQueryAliases(value.queryAliases, errors);
+  checkProjectGroups(value.projectGroups, errors);
   checkNumberObject(
     value,
     "mcpCache",
@@ -154,6 +161,7 @@ export function validateConfigValue(value, options = {}) {
 export function normalizeConfig(value = {}) {
   return {
     includes: normalizeStringArray(value.includes, DEFAULT_CONFIG.includes),
+    scopeRoots: normalizeScopeRoots(value.scopeRoots),
     indexDir: typeof value.indexDir === "string" && value.indexDir ? value.indexDir : DEFAULT_CONFIG.indexDir,
     exclude: normalizeStringArray(value.exclude, DEFAULT_CONFIG.exclude),
     maxChunkChars: positiveNumber(value.maxChunkChars, DEFAULT_CONFIG.maxChunkChars),
@@ -165,6 +173,7 @@ export function normalizeConfig(value = {}) {
       source: nonNegativeNumber(value.searchWeights?.source, DEFAULT_CONFIG.searchWeights.source),
     },
     queryAliases: normalizeQueryAliases(value.queryAliases),
+    projectGroups: safeNormalizeProjectGroups(value.projectGroups),
     mcpCache: {
       reloadCheckTtlMs: nonNegativeNumber(
         value.mcpCache?.reloadCheckTtlMs,
@@ -257,6 +266,32 @@ function checkStringArray(value, key, errors) {
   value[key].forEach((entry, index) => {
     if (typeof entry !== "string" || !entry.trim()) {
       errors.push(issue(`$.${key}[${index}]`, "Expected a non-empty string."));
+    }
+  });
+}
+
+function checkScopeRoots(value, errors, root) {
+  if (value === undefined) return;
+  if (!Array.isArray(value) || value.length === 0) {
+    errors.push(issue("$.scopeRoots", "Expected a non-empty array of relative paths."));
+    return;
+  }
+  const rootPath = root ? path.resolve(root) : null;
+  value.forEach((entry, index) => {
+    const issuePath = `$.scopeRoots[${index}]`;
+    if (typeof entry !== "string" || !entry.trim()) {
+      errors.push(issue(issuePath, "Expected a non-empty relative path."));
+      return;
+    }
+    const candidate = entry.trim();
+    const segments = candidate.replaceAll("\\", "/").split("/");
+    if (path.isAbsolute(candidate) || path.win32.isAbsolute(candidate)
+      || path.posix.isAbsolute(candidate) || segments.includes("..")) {
+      errors.push(issue(issuePath, "scopeRoots entries must be relative and stay inside the knowledge-base root."));
+      return;
+    }
+    if (rootPath && !isInsideRoot(rootPath, path.resolve(rootPath, candidate))) {
+      errors.push(issue(issuePath, "scopeRoots entries must resolve inside the knowledge-base root."));
     }
   });
 }
@@ -361,11 +396,38 @@ function checkQueryAliases(value, errors) {
   }
 }
 
+function checkProjectGroups(value, errors) {
+  if (value === undefined) return;
+  if (!isPlainObject(value)) {
+    errors.push(issue("$.projectGroups", "Expected an object of project member arrays."));
+    return;
+  }
+  for (const [group, members] of Object.entries(value)) {
+    if (!group.trim() || !Array.isArray(members) || members.length === 0
+      || members.some((member) => typeof member !== "string" || !member.trim())) {
+      errors.push(issue(`$.projectGroups.${group}`, "Expected a non-empty project member array."));
+    }
+  }
+  try {
+    normalizeProjectGroups(value);
+  } catch (error) {
+    errors.push(issue("$.projectGroups", error.message));
+  }
+}
+
 function normalizeQueryAliases(value) {
   if (!isPlainObject(value)) return {};
   return Object.fromEntries(Object.entries(value)
     .filter(([key, aliases]) => key.trim() && Array.isArray(aliases))
     .map(([key, aliases]) => [key.trim(), aliases.filter((alias) => typeof alias === "string" && alias.trim()).map((alias) => alias.trim())]));
+}
+
+function safeNormalizeProjectGroups(value) {
+  try {
+    return normalizeProjectGroups(value);
+  } catch {
+    return {};
+  }
 }
 
 function isPlainObject(value) {

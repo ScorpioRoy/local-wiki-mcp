@@ -29,6 +29,7 @@ export async function initKnowledgeBase(root, options = {}) {
   const baseEntries = [
     [".local-wiki.json", `${JSON.stringify({
       includes: ["wiki", "MEMORY.md"],
+      scopeRoots: ["."],
       exclude: [],
       indexDir: ".local-wiki-index",
       maxChunkChars: 2400,
