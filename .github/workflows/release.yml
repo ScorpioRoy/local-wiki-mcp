@@ -53,7 +53,9 @@ jobs:
       - run: npm run release:notes -- --output release-notes.md
       - id: package
         shell: bash
-        run: echo "version=$(node -p \"require('./package.json').version\")" >> "$GITHUB_OUTPUT"
+        run: |
+          version=$(node -p "require('./package.json').version")
+          printf 'version=%s\n' "$version" >> "$GITHUB_OUTPUT"
       - run: npm publish "dist/local-wiki-mcp-${{ steps.package.outputs.version }}.tgz" --access public --provenance
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
