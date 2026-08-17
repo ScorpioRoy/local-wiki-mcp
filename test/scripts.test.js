@@ -99,7 +99,7 @@ test("release workflow publishes and attaches the same verified bundle with leas
   assert.match(release, /version=\$\(node -p "require\('\.\/package\.json'\)\.version"\)/);
   assert.match(release, /printf 'version=%s\\n' "\$version" >> "\$GITHUB_OUTPUT"/);
   assert.doesNotMatch(release, /node -p \\"/);
-  assert.match(release, /npm publish "dist\/local-wiki-mcp-\$\{\{ steps\.package\.outputs\.version \}\}\.tgz"/);
+  assert.match(release, /npm publish "\.\/dist\/local-wiki-mcp-\$\{\{ steps\.package\.outputs\.version \}\}\.tgz"/);
   assert.match(release, /dist\/local-wiki-mcp-\$\{\{ steps\.package\.outputs\.version \}\}\.sha256/);
   assert.match(release, /dist\/local-wiki-mcp-\$\{\{ steps\.package\.outputs\.version \}\}\.manifest\.json/);
   assert.match(release, /gh release create/);
