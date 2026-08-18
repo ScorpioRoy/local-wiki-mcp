@@ -26,13 +26,13 @@
 安装公开发布版本：
 
 ```powershell
-npm install -g local-wiki-mcp@0.7.0
+npm install -g local-wiki-mcp@0.7.2
 ```
 
 也可以安装 GitHub Release 中附带 SHA-256 和 manifest 的 tarball：
 
 ```powershell
-npm install -g .\local-wiki-mcp-0.7.0.tgz
+npm install -g .\local-wiki-mcp-0.7.2.tgz
 ```
 
 从已审核源码安装：

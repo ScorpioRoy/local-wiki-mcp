@@ -35,13 +35,13 @@ It is designed for `agent-memory` style LLM wiki systems:
 Install the public release:
 
 ```powershell
-npm install -g local-wiki-mcp@0.7.0
+npm install -g local-wiki-mcp@0.7.2
 ```
 
 For offline or controlled environments, install the `.tgz` attached to the GitHub Release after verifying its SHA-256 and manifest:
 
 ```powershell
-npm install -g .\local-wiki-mcp-0.7.0.tgz
+npm install -g .\local-wiki-mcp-0.7.2.tgz
 ```
 
 An audited source checkout can also be linked globally:

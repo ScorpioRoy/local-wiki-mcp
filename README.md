@@ -32,13 +32,13 @@ English documentation: [README.en.md](README.en.md)
 安装公开发布版本：
 
 ```powershell
-npm install -g local-wiki-mcp@0.7.0
+npm install -g local-wiki-mcp@0.7.2
 ```
 
 离线或受控环境也可以安装 GitHub Release 附带 SHA-256 和 manifest 的 `.tgz`：
 
 ```powershell
-npm install -g .\local-wiki-mcp-0.7.0.tgz
+npm install -g .\local-wiki-mcp-0.7.2.tgz
 ```
 
 也可在已审核源码目录进行本地全局安装：

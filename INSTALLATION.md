@@ -11,7 +11,7 @@
 公开发布版本直接从 npm 安装：
 
 ```powershell
-npm install -g local-wiki-mcp@0.7.0
+npm install -g local-wiki-mcp@0.7.2
 local-wiki version
 ```
 
@@ -26,18 +26,18 @@ npm run release:package
 安装前先核对 SHA-256。Windows：
 
 ```powershell
-$expected = (Get-Content .\local-wiki-mcp-0.7.0.sha256).Split()[0]
-$actual = (Get-FileHash .\local-wiki-mcp-0.7.0.tgz -Algorithm SHA256).Hash.ToLowerInvariant()
+$expected = (Get-Content .\local-wiki-mcp-0.7.2.sha256).Split()[0]
+$actual = (Get-FileHash .\local-wiki-mcp-0.7.2.tgz -Algorithm SHA256).Hash.ToLowerInvariant()
 if ($actual -ne $expected) { throw "local-wiki-mcp tarball SHA-256 mismatch" }
-npm install -g .\local-wiki-mcp-0.7.0.tgz
+npm install -g .\local-wiki-mcp-0.7.2.tgz
 local-wiki version
 ```
 
 macOS：
 
 ```bash
-shasum -a 256 -c local-wiki-mcp-0.7.0.sha256
-npm install -g ./local-wiki-mcp-0.7.0.tgz
+shasum -a 256 -c local-wiki-mcp-0.7.2.sha256
+npm install -g ./local-wiki-mcp-0.7.2.tgz
 local-wiki version
 ```
 
