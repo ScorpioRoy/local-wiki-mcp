@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.7.1 - 2026-08-18
+
 - 归档知识继续在现行查询中强降权；当查询同时包含历史意图、明确版本号且版本匹配页面标题或路径时，优先对应历史版本，并将只在正文中交叉引用该版本的页面降为次要结果。
 - 项目级 `index.md`、`log.md` 和 `project-map.md` 统一按导航页校准，明确的项目 Map、索引或变更日志查询不降权。
 - `grep_wiki` 和 CLI `grep` 默认每个路径最多返回 3 个 chunk，并支持 `max_chunks_per_path` / `--max-chunks-per-path` 显式覆盖。

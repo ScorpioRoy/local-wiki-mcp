@@ -6,7 +6,7 @@ test("package metadata is ready for product distribution", async () => {
   const pkg = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"));
 
   assert.equal(pkg.private, false);
-  assert.equal(pkg.version, "0.7.0");
+  assert.equal(pkg.version, "0.7.1");
   assert.equal(pkg.scripts["bench:scale"], "node --expose-gc scripts/scale-bench.js");
   assert.equal(pkg.license, "MIT");
   assert.match(pkg.description, /local/i);

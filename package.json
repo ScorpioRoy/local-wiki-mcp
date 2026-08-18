@@ -1,6 +1,6 @@
 {
   "name": "local-wiki-mcp",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "description": "Local-first MCP search server for Markdown wiki knowledge bases, with no API keys or external services.",
   "private": false,
   "type": "module",
