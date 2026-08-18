@@ -1,11 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
   assertLoopbackRuntimeUrl,
   callRuntimeTool,
+  createRuntimeOwner,
   createRuntimeBridgeHandlers,
   inspectRuntime,
   readRuntimeState,
@@ -103,6 +104,52 @@ test("runtime bridge falls back to direct handlers when daemon is unavailable", 
   });
 });
 
+test("runtime bridge starts an owner on demand instead of requiring manual daemon startup", async () => {
+  await withTempDir(async (root) => {
+    const owner = createRuntimeOwner({ root, handlers: stubHandlers() });
+    const handlers = createRuntimeBridgeHandlers({
+      root,
+      fallbackHandlers: stubHandlers(),
+      ensureRuntime: owner.ensure,
+      timeoutMs: 200,
+    });
+    try {
+      const result = await handlers.search_wiki({ query: "automatic owner" });
+      const parsed = JSON.parse(result.content[0].text);
+      assert.equal(parsed.runtime.mode, "daemon");
+      assert.equal(owner.owned, true);
+      assert.equal((await inspectRuntime(root)).reachable, true);
+    } finally {
+      await owner.close();
+    }
+  });
+});
+
+test("runtime owners reuse concurrent startup and a standby owner can take over", async () => {
+  await withTempDir(async (root) => {
+    const first = createRuntimeOwner({ root, handlers: stubHandlers() });
+    const second = createRuntimeOwner({ root, handlers: stubHandlers() });
+    try {
+      const [firstStatus, secondStatus] = await Promise.all([first.ensure(), second.ensure()]);
+      assert.equal(firstStatus.reachable, true);
+      assert.equal(secondStatus.reachable, true);
+      assert.notEqual(first.owned, second.owned);
+
+      const owner = first.owned ? first : second;
+      const standby = first.owned ? second : first;
+      await owner.close();
+      assert.equal((await inspectRuntime(root)).reachable, false);
+
+      const recovered = await standby.ensure();
+      assert.equal(recovered.reachable, true);
+      assert.equal(standby.owned, true);
+    } finally {
+      await first.close();
+      await second.close();
+    }
+  });
+});
+
 test("Windows runtime installer uses the packaged PowerShell script", () => {
   let invocation;
   const result = runWindowsRuntimeInstaller("D:/knowledge", {
@@ -120,6 +167,23 @@ test("Windows runtime installer uses the packaged PowerShell script", () => {
   assert(invocation.args.includes("-NoStart"));
   assert(invocation.args.includes("D:/package/install.ps1"));
   assert.equal(invocation.options.windowsHide, true);
+});
+
+test("Windows Startup script selects one scalar PowerShell executable", async () => {
+  const script = await readFile(new URL("../scripts/install-windows-watch.ps1", import.meta.url), "utf8");
+
+  assert.match(script, /\$PowerShell = \$PowerShellCandidates \|/);
+  assert.doesNotMatch(script, /\$PowerShell\s*=\s*@\(/);
+  assert.match(script, /\$Shortcut\.TargetPath = \$PowerShell/);
+});
+
+test("Windows runtime wrapper retries crashes but preserves normal stop", async () => {
+  const script = await readFile(new URL("../scripts/local-wiki-watch.ps1", import.meta.url), "utf8");
+
+  assert.match(script, /while\s*\(\$true\)/i);
+  assert.match(script, /\$RuntimeExitCode\s*-eq\s*0/);
+  assert.match(script, /Restarting runtime in \$RetryDelaySeconds seconds/);
+  assert.match(script, /\$MaxRetryDelaySeconds\s*=\s*60/);
 });
 
 test("macOS runtime installer uses the packaged LaunchAgent script", () => {

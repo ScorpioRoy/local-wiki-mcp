@@ -47,6 +47,77 @@ test("rerankSearchResults uses one Ollama batch and can promote a semantic candi
   assert.equal(request.body.input.length, 3);
 });
 
+test("rerankSearchResults preserves lifecycle protection without double penalizing archived candidates", async () => {
+  const lifecycleResults = [
+    { ...lexical[0], score: 10, scores: { bm25: 10, lifecycle_multiplier: 1 } },
+    { ...lexical[1], score: 1.8, scores: { bm25: 9, lifecycle_multiplier: 0.2 } },
+  ];
+  const report = await rerankSearchResults(index, "current baseline", lifecycleResults, {
+    provider: "ollama",
+    baseUrl: "http://127.0.0.1:11434",
+    model: "test-model",
+    timeoutMs: 1000,
+    candidateLimit: 2,
+    semanticWeight: 0.8,
+  }, {
+    topK: 2,
+    fetch: async () => ({
+      ok: true,
+      json: async () => ({ embeddings: [[1, 0], [0, 1], [1, 0]] }),
+    }),
+  });
+
+  assert.equal(report.results[0].path, "a.md");
+  assert.equal(report.results.find((result) => result.path === "b.md").scores.lifecycle_multiplier, 0.2);
+});
+
+test("rerankSearchResults can promote a lifecycle-relaxed historical version", async () => {
+  const lifecycleResults = [
+    { ...lexical[0], score: 10, scores: { bm25: 10, lifecycle_multiplier: 1 } },
+    { ...lexical[1], score: 9, scores: { bm25: 9, lifecycle_multiplier: 1 } },
+  ];
+  const report = await rerankSearchResults(index, "V2.3.4 historical baseline", lifecycleResults, {
+    provider: "ollama",
+    baseUrl: "http://127.0.0.1:11434",
+    model: "test-model",
+    timeoutMs: 1000,
+    candidateLimit: 2,
+    semanticWeight: 0.8,
+  }, {
+    topK: 2,
+    fetch: async () => ({
+      ok: true,
+      json: async () => ({ embeddings: [[1, 0], [0, 1], [1, 0]] }),
+    }),
+  });
+
+  assert.equal(report.results[0].path, "b.md");
+});
+
+test("rerankSearchResults preserves explicit historical version specificity", async () => {
+  const historicalResults = [
+    { ...lexical[0], score: 1.8, scores: { bm25: 9, lifecycle_multiplier: 1, version_specificity: 0.2 } },
+    { ...lexical[1], score: 10, scores: { bm25: 10, lifecycle_multiplier: 1, version_specificity: 1 } },
+  ];
+  const report = await rerankSearchResults(index, "V2.3.4 historical baseline", historicalResults, {
+    provider: "ollama",
+    baseUrl: "http://127.0.0.1:11434",
+    model: "test-model",
+    timeoutMs: 1000,
+    candidateLimit: 2,
+    semanticWeight: 0.8,
+  }, {
+    topK: 2,
+    fetch: async () => ({
+      ok: true,
+      json: async () => ({ embeddings: [[1, 0], [1, 0], [0, 1]] }),
+    }),
+  });
+
+  assert.equal(report.results[0].path, "b.md");
+  assert.equal(report.results.find((result) => result.path === "a.md").scores.version_specificity, 0.2);
+});
+
 test("rerankSearchResults falls back to lexical order on local provider failure", async () => {
   const report = await rerankSearchResults(index, "query", lexical, {
     provider: "ollama",

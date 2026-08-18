@@ -75,7 +75,7 @@ local-wiki doctor --root D:\path\to\agent-memory --verbose
 
 ## Shared runtime 不可用或进入 fallback
 
-运行 `local-wiki runtime status --root <ROOT>` 查看 `active` 与 `reachable`。`serve --daemon` 默认会在 daemon 缺失或超时时回退直接索引，并在 MCP 响应中返回 `runtime.mode=fallback`。重新运行 `local-wiki daemon --root <ROOT> --watch` 可恢复共享模式；失效状态文件和锁由新 runtime 自动清理。不要把 `.local-wiki-index/runtime.json` 上传或写入日志，其中包含本地认证 token。
+运行 `local-wiki runtime status --root <ROOT>` 查看 `active` 与 `reachable`。显式使用 `serve --daemon` 时，bridge 会先复用现有 daemon；不存在时自动成为临时 owner，启动 runtime 和 watcher，owner 退出后其它 bridge 会在下一次调用时接管。只有自动接管也失败时才回退直接索引，并在 MCP 响应中返回 `runtime.mode=fallback`。也可以单独运行 `local-wiki daemon --root <ROOT> --watch` 恢复长期共享模式；失效状态文件和锁由新 runtime 自动清理。不要把 `.local-wiki-index/runtime.json` 上传或写入日志，其中包含本地认证 token。
 
 ## `doctor --fix` 的边界
 

@@ -23,6 +23,7 @@ import { startExclusiveWatcher } from "./watcher.js";
 import { publicProjectScope, resolveProjectScope } from "./project-scope.js";
 import { bindKnowledgeBase } from "./binding.js";
 import {
+  createRuntimeOwner,
   createRuntimeBridgeHandlers,
   inspectRuntime,
   startRuntimeServer,
@@ -228,7 +229,11 @@ async function main(argv = process.argv.slice(2)) {
     requireValue(pattern, "grep requires a pattern");
     const index = await loadIndex(root, indexDir);
     const projectScope = cliProjectScope(args, config.projectGroups, config.scopeRoots);
-    const results = grepIndex(index, pattern, { topK: args.topK ?? 20, projectScope });
+    const results = grepIndex(index, pattern, {
+      topK: args.topK ?? 20,
+      maxChunksPerPath: args.maxChunksPerPath,
+      projectScope,
+    });
     printJson({ pattern, scope: publicProjectScope(projectScope), results });
     return;
   }
@@ -373,12 +378,39 @@ async function main(argv = process.argv.slice(2)) {
     const runtimeMode = args.daemon
       ? (args.noFallback ? "required" : "auto")
       : config.runtime.mode;
+    const runtimeOwner = args.daemon ? createRuntimeOwner({
+      ...serverOptions,
+      config,
+      mcpCache: config.mcpCache,
+      watch: true,
+      requestLimitBytes: config.runtime.requestLimitBytes,
+      timeoutMs: config.runtime.timeoutMs,
+      watchOptions: {
+        intervalMs: args.intervalMs ?? config.watch.intervalMs,
+        strictEvery: config.watch.strictEvery,
+        runImmediately: true,
+        onResult: (report) => {
+          if (report.updated) console.error(`local-wiki runtime watch: ${report.mode}, ${report.chunk_count} chunks`);
+        },
+        onError: (error) => console.error(`local-wiki runtime watch: ${error.message}`),
+      },
+    }) : null;
+    if (runtimeOwner) {
+      try {
+        await runtimeOwner.ensure();
+      } catch (error) {
+        if (runtimeMode === "required") throw error;
+        console.error(`local-wiki runtime: automatic owner unavailable; fallback remains active: ${error.message}`);
+      }
+    }
     const handlers = runtimeMode === "off" ? undefined : createRuntimeBridgeHandlers({
       ...serverOptions,
       mode: runtimeMode,
       timeoutMs: config.runtime.timeoutMs,
+      ensureRuntime: runtimeOwner?.ensure,
     });
     startStdioServer({ ...serverOptions, handlers });
+    if (runtimeOwner) installRuntimeOwnerShutdown(runtimeOwner);
     return;
   }
 
@@ -574,6 +606,20 @@ function installRuntimeShutdown(runtime) {
   }
 }
 
+function installRuntimeOwnerShutdown(runtimeOwner) {
+  let closing = null;
+  const close = (exit) => {
+    closing ??= Promise.resolve(runtimeOwner.close()).finally(() => {
+      if (exit) process.exit(0);
+    });
+    return closing;
+  };
+  for (const signal of ["SIGINT", "SIGTERM"]) {
+    process.once(signal, () => void close(true));
+  }
+  process.stdin.once("end", () => void close(false));
+}
+
 function directServerOptions(root, config) {
   return {
     root,
@@ -605,6 +651,7 @@ Commands:
          [--project NAME ...] [--no-common] [--global]
   explain <query> [--root DIR]            Explain query analysis and result scores
   grep   <pattern> [--root DIR]           Exact substring search
+         [--max-chunks-per-path N]
          [--project NAME ...] [--no-common] [--global]
   read   <path-or-id> [--root DIR]        Read indexed chunks
   status [--root DIR] [--strict]          Show index metadata and freshness

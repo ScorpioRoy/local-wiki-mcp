@@ -34,12 +34,21 @@ export async function rerankSearchResults(index, query, lexicalResults, config =
     const started = performance.now();
     const embeddings = await embedWithOllama(baseUrl, config, input, options.fetch);
     const queryEmbedding = embeddings[0];
-    const maxLexical = Math.max(...candidates.map((result) => result.score), 1e-9);
+    const rankingMultipliers = candidates.map((result) => (
+      boundedNumber(result.scores?.lifecycle_multiplier, 1, 0.01, 1)
+      * boundedNumber(result.scores?.version_specificity, 1, 0.01, 1)
+    ));
+    const baseLexicalScores = candidates.map((result, index) => result.score / rankingMultipliers[index]);
+    const maxLexical = Math.max(...baseLexicalScores, 1e-9);
     const semanticWeight = boundedNumber(config.semanticWeight, 0.35, 0, 1);
     const results = candidates.map((result, index) => {
       const semantic = cosine(queryEmbedding, embeddings[index + 1]);
-      const lexicalNormalized = result.score / maxLexical;
-      const rerankScore = ((1 - semanticWeight) * lexicalNormalized) + (semanticWeight * semantic);
+      const lexicalNormalized = baseLexicalScores[index] / maxLexical;
+      const lifecycleMultiplier = boundedNumber(result.scores?.lifecycle_multiplier, 1, 0.01, 1);
+      const versionSpecificity = boundedNumber(result.scores?.version_specificity, 1, 0.01, 1);
+      const rerankScore = (
+        ((1 - semanticWeight) * lexicalNormalized) + (semanticWeight * semantic)
+      ) * rankingMultipliers[index];
       return {
         ...result,
         lexical_score: result.score,
@@ -48,6 +57,8 @@ export async function rerankSearchResults(index, query, lexicalResults, config =
           ...result.scores,
           lexical_normalized: lexicalNormalized,
           semantic,
+          lifecycle_multiplier: lifecycleMultiplier,
+          version_specificity: versionSpecificity,
         },
       };
     }).sort((left, right) => (

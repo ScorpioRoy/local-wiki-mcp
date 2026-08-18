@@ -94,6 +94,40 @@ export async function startRuntimeServer(options = {}) {
   };
 }
 
+export function createRuntimeOwner(options = {}) {
+  let runtime = null;
+  let starting = null;
+
+  async function ensure() {
+    const current = await inspectRuntime(options.root, options.indexDir, options);
+    if (current.reachable) return current;
+    if (!starting) {
+      starting = startOrReuseRuntime(options)
+        .then((result) => {
+          runtime = result.runtime;
+          return result.status;
+        })
+        .finally(() => {
+          starting = null;
+        });
+    }
+    return starting;
+  }
+
+  return {
+    ensure,
+    get owned() {
+      return runtime !== null;
+    },
+    async close() {
+      if (starting) await starting.catch(() => {});
+      const ownedRuntime = runtime;
+      runtime = null;
+      await ownedRuntime?.close();
+    },
+  };
+}
+
 export function createRuntimeBridgeHandlers(options = {}) {
   const fallback = options.fallbackHandlers ?? createToolHandlers(options);
   const mode = options.mode ?? "auto";
@@ -104,16 +138,54 @@ export function createRuntimeBridgeHandlers(options = {}) {
         const result = await callRuntimeTool(options.root, options.indexDir, name, args, options);
         return annotateRuntime(result, { mode: "daemon" });
       } catch (error) {
-        if (mode === "required") throw error;
+        let unavailable = error;
+        if (typeof options.ensureRuntime === "function") {
+          try {
+            await options.ensureRuntime();
+            const result = await callRuntimeTool(options.root, options.indexDir, name, args, options);
+            return annotateRuntime(result, { mode: "daemon" });
+          } catch (recoveryError) {
+            unavailable = recoveryError;
+          }
+        }
+        if (mode === "required") throw unavailable;
         const result = await fallback[name](args);
         return annotateRuntime(result, {
           mode: "fallback",
-          warning: `Shared runtime unavailable; direct local search was used: ${error.message}`,
+          warning: `Shared runtime unavailable; direct local search was used: ${unavailable.message}`,
         });
       }
     };
   }
   return handlers;
+}
+
+async function startOrReuseRuntime(options) {
+  try {
+    const runtime = await startRuntimeServer(options);
+    return {
+      runtime,
+      status: await inspectRuntime(options.root, options.indexDir, options),
+    };
+  } catch (error) {
+    if (error.code !== "RUNTIME_ALREADY_RUNNING") throw error;
+    return {
+      runtime: null,
+      status: await waitForRuntime(options.root, options.indexDir, options),
+    };
+  }
+}
+
+async function waitForRuntime(root, indexDir, options) {
+  const timeoutMs = positiveInteger(options.startupTimeoutMs, 2000);
+  const deadline = Date.now() + timeoutMs;
+  let status;
+  do {
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    status = await inspectRuntime(root, indexDir, options);
+    if (status.reachable) return status;
+  } while (Date.now() < deadline);
+  throw new Error(`Shared runtime owner did not become reachable: ${status?.health_error ?? status?.reason ?? "startup timed out"}`);
 }
 
 export async function callRuntimeTool(root, indexDir, name, args = {}, options = {}) {

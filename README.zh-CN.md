@@ -12,9 +12,11 @@
 - `context` 紧凑启动上下文、单实例 watcher 和空闲索引卸载。
 - 默认关闭、仅限 loopback 且拒绝重定向的 Ollama 本地语义重排。
 - 无模型字段化排序、异构来源校准、历史来源治理、置信度和默认 2000 token 结果预算。
+- 现行查询强降权归档页面，只有“历史意图 + 明确版本号 + 页面版本匹配”时放宽；项目导航页与普通业务页分开校准。
 - 单实例共享 daemon、随机 token 鉴权和 daemon 故障时的直接检索回退。
 - 稳定的只读 MCP 工具：`search_wiki`、`grep_wiki`、`read_wiki`、`status_wiki`。
 - `search_wiki` 和 `grep_wiki` 支持项目硬隔离、跨项目白名单及默认 common 知识保留。
+- `grep_wiki` 默认每个文件最多返回 3 个匹配 chunk，并支持显式调整。
 - `scopeRoots` 支持在一个物理根下同时识别共享 `wiki/<project>/` 和嵌套个人 `agent-memory/wiki/<project>/`，默认 `["."]` 保持兼容。
 - `local-wiki bind` 默认预览，可显式初始化、刷新并安全合并 Codex/Cursor 配置。
 - `doctor`、`repair`、`watch`、`bench`、`eval`、`smoke`、`audit` 等产品运维命令。
@@ -65,7 +67,7 @@ local-wiki watch --root D:\path\to\agent-memory
 
 默认 `serve` 只读；只有显式 `serve --watch` 才会自动写索引。
 
-推荐运行 `local-wiki daemon --root . --watch`，并让 Codex/Cursor 使用 `serve --daemon`。共享 runtime 不可用时会自动回退直接本地检索。
+推荐运行 `local-wiki daemon --root . --watch`，并让 Codex/Cursor 使用 `serve --daemon`。共享 runtime 不可用时，显式启用 daemon 的 bridge 会自动成为临时 owner；owner 退出后，其它 bridge 会在下一次调用时接管，因此重启 Codex/Cursor 不需要手动启动 daemon。只有自动接管失败时才回退直接本地检索；普通 `serve` 仍保持只读且不会启动 runtime。
 
 多项目知识库中，项目任务应显式传项目 ID；不传项目参数时为兼容全局检索：
 

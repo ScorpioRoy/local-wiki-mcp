@@ -75,6 +75,8 @@ function rankSearch(index, query, options = {}, explain = false) {
   const queryVectorNorm = vectorMagnitude(queryVector);
   const queryText = normalizeText(query).trim();
   const queryTerms = queryWords(query);
+  const historicalQuery = analyzeHistoricalQuery(query);
+  const navigationQuery = isNavigationQuery(query);
   const weights = {
     exact: positiveNumber(options.weights?.exact, 3),
     title: positiveNumber(options.weights?.title, 1.5),
@@ -97,7 +99,8 @@ function rankSearch(index, query, options = {}, explain = false) {
         + (QUERY_ALIAS_WEIGHT * bm25Alias);
       const vector = cosineSimilarity(queryVector, chunk.vector, queryVectorNorm, chunk.vectorNorm);
       const boost = scoreBoosts(chunk, queryText, queryTerms, queryPlan, weights, fields);
-      const lifecycle = scoreLifecycle(fields, options.now);
+      const lifecycle = scoreLifecycle(fields, options.now, historicalQuery);
+      const versionSpecificity = scoreVersionSpecificity(fields, historicalQuery);
       const linear = bm25 + vector + boost.exact + boost.title + boost.path + boost.identifier;
       const result = toResult(chunk, linear, {
         bm25,
@@ -109,6 +112,8 @@ function rankSearch(index, query, options = {}, explain = false) {
         source: lifecycle.score * weights.source,
         recency: lifecycle.recency,
         lifecycle: lifecycle.lifecycle,
+        lifecycle_multiplier: lifecycle.multiplier,
+        version_specificity: versionSpecificity,
         linear,
       });
       result.source_type = lifecycle.type;
@@ -134,7 +139,7 @@ function rankSearch(index, query, options = {}, explain = false) {
     });
 
   applyReciprocalRankFusion(candidates);
-  applyHeterogeneousSourceCalibration(candidates);
+  applyHeterogeneousSourceCalibration(candidates, navigationQuery);
   const scored = candidates.sort((left, right) => {
       if (right.score !== left.score) return right.score - left.score;
       return left.path.localeCompare(right.path);
@@ -250,7 +255,7 @@ function queryWords(query) {
   return unique(words);
 }
 
-function scoreLifecycle(fields, nowValue) {
+function scoreLifecycle(fields, nowValue, historicalQuery) {
   let score = fields.sourceScore;
   let recency = 1;
   if (fields.type === "daily") {
@@ -262,11 +267,15 @@ function scoreLifecycle(fields, nowValue) {
     }
   }
   if (fields.superseded) score *= 0.2;
+  const historicalVersionMatch = fields.superseded
+    && historicalQuery.historical
+    && historicalQuery.versions.some((version) => fields.versions.includes(version));
   return {
     type: fields.type,
     score,
     recency,
     lifecycle: fields.superseded ? -1 : 0,
+    multiplier: fields.superseded && !historicalVersionMatch ? 0.2 : 1,
     status: fields.status,
     topicKey: fields.topicKey,
   };
@@ -291,10 +300,14 @@ function applyReciprocalRankFusion(results) {
   }
 }
 
-function applyHeterogeneousSourceCalibration(results) {
+function applyHeterogeneousSourceCalibration(results, navigationQuery = false) {
   const heterogeneous = new Set(results.map((result) => result.source_type)).size > 1;
   for (const result of results) {
-    const source = heterogeneous ? (SOURCE_CALIBRATION[result.source_type] ?? 0.7) : 1;
+    const source = heterogeneous
+      ? navigationQuery && result.source_type === "wiki_index"
+        ? 1
+        : (SOURCE_CALIBRATION[result.source_type] ?? 0.7)
+      : 1;
     const coverage = heterogeneous ? 0.5 + (0.5 * (result.scores.term_coverage ?? 0)) : 1;
     const calibration = source * coverage;
     result.scores.calibration = calibration;
@@ -302,7 +315,9 @@ function applyHeterogeneousSourceCalibration(results) {
       result.explanation.source_calibration = source;
       result.explanation.coverage_calibration = coverage;
     }
-    result.score *= calibration;
+    result.score *= calibration
+      * (result.scores.lifecycle_multiplier ?? 1)
+      * (result.scores.version_specificity ?? 1);
   }
 }
 
@@ -315,15 +330,23 @@ function channelValue(result, channel) {
 
 export function grepIndex(index, pattern, options = {}) {
   const topK = positiveInteger(options.topK, 20);
+  const maxChunksPerPath = positiveInteger(options.maxChunksPerPath, 3);
   const needle = String(pattern ?? "").toLowerCase();
   if (!needle) return [];
   const projectScope = resolveProjectScope(options);
-
-  return index.chunks
+  const matches = index.chunks
     .filter((chunk) => matchesProjectScope(chunk, projectScope))
-    .filter((chunk) => `${chunk.path}\n${chunk.heading}\n${chunk.text}`.toLowerCase().includes(needle))
-    .slice(0, topK)
-    .map((chunk) => toResult(chunk, 1, { bm25: 1, vector: 0 }));
+    .filter((chunk) => `${chunk.path}\n${chunk.heading}\n${chunk.text}`.toLowerCase().includes(needle));
+  const selected = [];
+  const pathCounts = new Map();
+  for (const chunk of matches) {
+    const count = pathCounts.get(chunk.path) ?? 0;
+    if (count >= maxChunksPerPath) continue;
+    selected.push(chunk);
+    pathCounts.set(chunk.path, count + 1);
+    if (selected.length >= topK) break;
+  }
+  return selected.map((chunk) => toResult(chunk, 1, { bm25: 1, vector: 0 }));
 }
 
 export function readFromIndex(index, target, options = {}) {
@@ -459,6 +482,11 @@ function getIndexSearchCache(index, scopeRoots = ["."]) {
   INDEX_SEARCH_CACHE.set(index, caches);
   const fields = new Map();
   const positions = new Map();
+  const documentLifecycle = new Map();
+  for (const chunk of index.chunks) {
+    const lifecycle = parseDocumentLifecycle(chunk.text);
+    if (lifecycle) documentLifecycle.set(chunk.path, lifecycle);
+  }
   index.chunks.forEach((chunk, position) => {
     const normalizedPath = String(chunk.path ?? "").replaceAll("\\", "/").toLowerCase();
     const sourcePath = pathInsideMostSpecificScopeRoot(normalizedPath, scopeRoots);
@@ -467,7 +495,7 @@ function getIndexSearchCache(index, scopeRoots = ["."]) {
     let sourceScore = 0.55;
     if (sourcePath === "memory.md") [type, sourceScore] = ["memory", 0.95];
     else if (sourcePath.startsWith("tools/local-wiki-mcp/")) [type, sourceScore] = ["product_doc", 0.95];
-    else if (new Set(["wiki/index.md", "wiki/log.md"]).has(sourcePath)) [type, sourceScore] = ["wiki_index", 0.7];
+    else if (isNavigationPath(sourcePath)) [type, sourceScore] = ["wiki_index", 0.7];
     else if (sourcePath.startsWith("wiki/")) [type, sourceScore] = ["wiki", 1];
     else if (sourcePath.startsWith("skills/") || sourcePath.includes("/.cursor/rules/")) [type, sourceScore] = ["rule", 0.9];
     else if (sourcePath.startsWith("workstates/")) [type, sourceScore] = ["workstate", 0.75];
@@ -476,9 +504,14 @@ function getIndexSearchCache(index, scopeRoots = ["."]) {
     else if (sourcePath.startsWith("templates/")) [type, sourceScore] = ["template", 0.3];
 
     const statusMatch = body.match(/^(?:-\s*)?(?:status|状态):\s*([^\r\n]+)$/im);
-    const status = statusMatch?.[1]?.trim().toLowerCase() ?? "active";
-    const superseded = /^(superseded|archived|deprecated|obsolete)$/i.test(status)
+    const chunkStatus = statusMatch?.[1]?.trim().toLowerCase() ?? "active";
+    const chunkSuperseded = /^(superseded|archived|deprecated|obsolete)$/i.test(chunkStatus)
       || /^supersededBy:\s*\S+/im.test(body);
+    const fileLifecycle = documentLifecycle.get(chunk.path);
+    const superseded = fileLifecycle?.superseded || chunkSuperseded;
+    const status = fileLifecycle?.superseded
+      ? fileLifecycle.status
+      : chunkSuperseded ? chunkStatus : fileLifecycle?.status ?? chunkStatus;
     const dateMatch = type === "daily" ? sourcePath.match(/(\d{4}-\d{2}-\d{2})\.md$/) : null;
     fields.set(chunk.id, {
       heading: normalizeText(chunk.heading),
@@ -488,6 +521,7 @@ function getIndexSearchCache(index, scopeRoots = ["."]) {
       sourceScore,
       status,
       superseded,
+      versions: extractVersions(`${chunk.path} ${chunk.heading}`),
       dailyTimestamp: dateMatch ? Date.parse(`${dateMatch[1]}T00:00:00Z`) : null,
       topicKey: type === "daily"
         ? normalizeText(chunk.heading).replace(/^任务\d+[:：]?\s*/, "").replace(/\s+/g, " ").trim()
@@ -498,6 +532,74 @@ function getIndexSearchCache(index, scopeRoots = ["."]) {
   const cache = { fields, positions };
   caches.set(cacheKey, cache);
   return cache;
+}
+
+function analyzeHistoricalQuery(query) {
+  const text = normalizeText(query);
+  return {
+    historical: /(?:历史|追溯|旧版|旧版本|归档|曾经|当时|过往|historical|history|archived|previous|old version)/i.test(text),
+    versions: extractVersions(query),
+  };
+}
+
+function scoreVersionSpecificity(fields, historicalQuery) {
+  if (!historicalQuery.historical || !historicalQuery.versions.length) return 1;
+  return historicalQuery.versions.some((version) => fields.versions.includes(version)) ? 1 : 0.2;
+}
+
+function extractVersions(value) {
+  return unique([...String(value ?? "").matchAll(/\bv?\d+(?:\.\d+)+\b/gi)]
+    .map((match) => match[0].toLowerCase().replace(/^v/, "")));
+}
+
+function isNavigationPath(sourcePath) {
+  return /^wiki\/(?:.+\/)?(?:index|log|project-map)\.md$/.test(sourcePath);
+}
+
+function isNavigationQuery(query) {
+  return /(?:项目\s*(?:map|地图)|project[-\s]?map|知识(?:库)?索引|wiki\s*index|变更日志|wiki\s*log)/i.test(String(query ?? ""));
+}
+
+function parseDocumentLifecycle(body) {
+  const frontmatter = String(body ?? "").match(/^\uFEFF?---[ \t]*\r?\n([\s\S]*?)\r?\n---(?:[ \t]*\r?\n|$)/)?.[1];
+  if (!frontmatter) return null;
+
+  const status = frontmatter.match(/^status\s*:\s*([^\r\n#]+)/im)?.[1]?.trim().toLowerCase() ?? "active";
+  const archived = frontmatterHasTag(frontmatter, "archived");
+  const supersededBy = /^supersededBy\s*:\s*\S+/im.test(frontmatter);
+  const superseded = archived
+    || supersededBy
+    || /^(superseded|archived|deprecated|obsolete)$/i.test(status);
+
+  return {
+    status: archived ? "archived" : supersededBy && status === "active" ? "superseded" : status,
+    superseded,
+  };
+}
+
+function frontmatterHasTag(frontmatter, expectedTag) {
+  const lines = String(frontmatter).split(/\r?\n/);
+  for (let index = 0; index < lines.length; index += 1) {
+    const match = /^tags\s*:\s*(.*)$/i.exec(lines[index]);
+    if (!match) continue;
+    if (metadataValueHasToken(match[1], expectedTag)) return true;
+    if (match[1].trim()) return false;
+    for (index += 1; index < lines.length && /^\s+/.test(lines[index]); index += 1) {
+      if (metadataValueHasToken(lines[index], expectedTag)) return true;
+    }
+    return false;
+  }
+  return false;
+}
+
+function metadataValueHasToken(value, expectedToken) {
+  return String(value)
+    .toLowerCase()
+    .replace(/^\s*-\s*/, "")
+    .replace(/[\[\]'\"]/g, " ")
+    .split(/[,\s]+/)
+    .filter(Boolean)
+    .includes(expectedToken);
 }
 
 function pathInsideMostSpecificScopeRoot(normalizedPath, scopeRoots) {

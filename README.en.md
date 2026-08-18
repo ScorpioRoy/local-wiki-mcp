@@ -153,6 +153,8 @@ Create `.local-wiki.json` in the knowledge-base root:
 }
 ```
 
+Archived or superseded pages remain strongly downranked for current-state queries. A historical page regains its normal final multiplier only when the query expresses historical intent, contains an explicit version, and that version matches the page title or path; it is then preferred over pages that merely cross-reference that version in their body. Project-level `index.md`, `log.md`, and `project-map.md` files are calibrated as navigation pages, while explicit map, index, and changelog queries can still rank them normally.
+
 Command-line flags override the config file:
 
 ```powershell
@@ -248,9 +250,12 @@ Use for exact text, config keys, error messages, paths, class names, and functio
 {
   "pattern": "config.toml",
   "project": "legacy-app",
-  "top_k": 20
+  "top_k": 20,
+  "max_chunks_per_path": 3
 }
 ```
+
+`grep_wiki` returns at most three matching chunks per file by default so one long document cannot consume the result budget. Override it with `max_chunks_per_path`; the CLI equivalent is `--max-chunks-per-path`.
 
 ### Multi-project isolation
 
@@ -316,7 +321,7 @@ Or opt in while serving MCP:
 local-wiki serve --root . --watch
 ```
 
-For production, run `local-wiki daemon --root . --watch` once and configure Codex/Cursor with `serve --daemon`. The daemon binds only to loopback, authenticates with a random local state token, and enforces a 1MB request limit. Bridges fall back to direct local index access when the daemon is unavailable. On Windows after a global install, add the packaged runtime to the current-user Startup folder:
+For production, run `local-wiki daemon --root . --watch` once and configure Codex/Cursor with `serve --daemon`. The daemon binds only to loopback, authenticates with a random local state token, and enforces a 1MB request limit. If no daemon is available, an explicitly daemon-enabled bridge automatically becomes a temporary runtime owner; another bridge takes over on its next call after the owner exits, so restarting Codex or Cursor does not require a manual daemon start. Bridges fall back to direct local index access only when automatic ownership also fails. Plain `serve` remains read-only and does not start a runtime. On Windows after a global install, add the packaged runtime to the current-user Startup folder:
 
 ```powershell
 $packageRoot = npm root -g

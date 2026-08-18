@@ -152,6 +152,8 @@ sh "$PACKAGE_ROOT/local-wiki-mcp/scripts/bind-knowledge-base-macos.sh" --root "$
 }
 ```
 
+归档或已替代页面在普通现行查询中保持强降权。只有查询同时表达历史追溯意图、包含明确版本号，并且该版本匹配页面标题或路径时，对应历史页面才恢复正常最终倍率并优先于正文交叉引用。项目级 `index.md`、`log.md` 和 `project-map.md` 按导航页处理；明确查询项目 Map、知识索引或变更日志时仍可正常优先命中。
+
 命令行参数会覆盖配置文件：
 
 ```powershell
@@ -254,9 +256,12 @@ serve   [--root DIR] [--watch]           启动 MCP stdio 服务
 {
   "pattern": "config.toml",
   "project": "legacy-app",
-  "top_k": 20
+  "top_k": 20,
+  "max_chunks_per_path": 3
 }
 ```
+
+`grep_wiki` 默认每个文件最多返回 3 个匹配 chunk，避免长文占满结果；需要更多或更少上下文时显式调整 `max_chunks_per_path`。CLI 使用 `--max-chunks-per-path`。
 
 ### 多项目检索隔离
 
@@ -351,7 +356,7 @@ macOS 使用当前用户 LaunchAgent：
 local-wiki runtime install --root "$HOME/agent-memory"
 ```
 
-Windows 日志写入知识库的 `.state/local-wiki-runtime.log` 并在达到 5MB 后轮转；macOS LaunchAgent 也写入同一路径。`runtime uninstall` 仅移除当前用户 Startup/LaunchAgent，不删除 Markdown 或索引。
+Windows 日志写入知识库的 `.state/local-wiki-runtime.log` 并在达到 5MB 后轮转；Startup 包装器在 daemon 异常退出时按 5～60 秒退避重启，正常 `runtime stop` 不重启。macOS LaunchAgent 也写入同一路径。若系统策略阻止后台启动，显式使用 `serve --daemon` 的 Codex/Cursor bridge 会在启动时自动成为临时 runtime owner；owner 退出后，其它 bridge 会在下一次调用时接管，因此重启客户端不需要手动启动 daemon。普通 `serve` 仍保持只读且不会自动托管 runtime。`runtime uninstall` 仅移除当前用户 Startup/LaunchAgent，不删除 Markdown 或索引。
 
 ## 可选本地语义重排
 

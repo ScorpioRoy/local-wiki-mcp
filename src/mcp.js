@@ -36,6 +36,7 @@ export function listTools() {
         properties: {
           pattern: { type: "string", description: "Exact text to find." },
           top_k: { type: "number", description: "Maximum result count. Default 20." },
+          max_chunks_per_path: { type: "number", description: "Maximum exact-match chunks returned from one file. Default 3." },
           scope: { type: "string", enum: ["global", "project"], description: "Search globally or restrict exact matches to explicit projects." },
           project: { type: "string", description: "Single project id, for example legacy-app." },
           projects: { type: "array", items: { type: "string" }, description: "Explicit project allowlist for cross-project work." },
@@ -139,10 +140,16 @@ export function createToolHandlers(options = {}) {
 
     async grep_wiki(args) {
       const pattern = requiredString(args.pattern, "pattern");
+      const maxChunksPerPath = optionalPositiveInteger(
+        args.max_chunks_per_path ?? args.maxChunksPerPath,
+        3,
+        "max_chunks_per_path",
+      );
       const index = await load();
       const projectScope = resolveProjectScope({ ...args, projectGroups, scopeRoots });
       const results = grepIndex(index, pattern, {
         topK: optionalPositiveInteger(args.top_k ?? args.topK, 20, "top_k"),
+        maxChunksPerPath,
         projectScope,
       });
       return jsonContent({ pattern, scope: publicProjectScope(projectScope), results });

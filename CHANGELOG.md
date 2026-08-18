@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- 归档知识继续在现行查询中强降权；当查询同时包含历史意图、明确版本号且版本匹配页面标题或路径时，优先对应历史版本，并将只在正文中交叉引用该版本的页面降为次要结果。
+- 项目级 `index.md`、`log.md` 和 `project-map.md` 统一按导航页校准，明确的项目 Map、索引或变更日志查询不降权。
+- `grep_wiki` 和 CLI `grep` 默认每个路径最多返回 3 个 chunk，并支持 `max_chunks_per_path` / `--max-chunks-per-path` 显式覆盖。
+- Ollama reranker 在最终语义混排后保留生命周期保护，并避免对词法阶段已经降权的归档结果重复施加惩罚。
+
 ## 0.7.0 - 2026-08-14
 
 - 新增默认只预览的 `local-wiki bind`，可显式初始化、刷新索引并安全绑定 Codex/Cursor；`--apply` 写入前备份配置，遇到未托管冲突时停止。

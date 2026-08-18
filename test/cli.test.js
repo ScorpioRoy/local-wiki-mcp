@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
+import { once } from "node:events";
 import { access, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -10,6 +11,65 @@ import { promisify } from "node:util";
 const execFileAsync = promisify(execFile);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const cliPath = path.resolve(__dirname, "../src/cli.js");
+
+function startMcpClient(root) {
+  const child = spawn(process.execPath, [cliPath, "serve", "--root", root, "--daemon"], {
+    stdio: ["pipe", "pipe", "pipe"],
+  });
+  const pending = [];
+  let stdout = "";
+  let stderr = "";
+
+  child.stdout.setEncoding("utf8");
+  child.stderr.setEncoding("utf8");
+  child.stdout.on("data", (chunk) => {
+    stdout += chunk;
+    const lines = stdout.split(/\r?\n/);
+    stdout = lines.pop() ?? "";
+    for (const line of lines) pending.shift()?.resolve(JSON.parse(line));
+  });
+  child.stderr.on("data", (chunk) => {
+    stderr += chunk;
+  });
+  child.once("error", (error) => {
+    while (pending.length) pending.shift().reject(error);
+  });
+  child.once("exit", (code) => {
+    if (code === 0) return;
+    const error = new Error(`MCP client exited with ${code}: ${stderr}`);
+    while (pending.length) pending.shift().reject(error);
+  });
+
+  return {
+    child,
+    call(message) {
+      return new Promise((resolve, reject) => {
+        pending.push({ resolve, reject });
+        child.stdin.write(`${JSON.stringify(message)}\n`);
+      });
+    },
+    async close() {
+      if (child.exitCode !== null) return;
+      child.stdin.end();
+      const [code] = await withTimeout(once(child, "exit"), 5000, "MCP client did not stop after stdin closed");
+      assert.equal(code, 0, stderr);
+    },
+  };
+}
+
+async function withTimeout(promise, timeoutMs, message) {
+  let timer;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error(message)), timeoutMs);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 async function withTempDir(run) {
   const dir = await mkdtemp(path.join(tmpdir(), "local-wiki-cli-"));
@@ -36,6 +96,51 @@ test("cli indexes and searches a local wiki", async () => {
   });
 });
 
+test("serve --daemon automatically owns runtime again after the MCP client restarts", async () => {
+  await withTempDir(async (root) => {
+    await execFileAsync("node", [cliPath, "index", "--root", root, "--include", "wiki"]);
+    let firstPid;
+
+    const first = startMcpClient(root);
+    try {
+      await first.call({ jsonrpc: "2.0", id: 1, method: "initialize", params: {} });
+      const response = await first.call({
+        jsonrpc: "2.0",
+        id: 2,
+        method: "tools/call",
+        params: { name: "status_wiki", arguments: {} },
+      });
+      const payload = JSON.parse(response.result.content[0].text);
+      assert.equal(payload.runtime.mode, "daemon");
+      const status = JSON.parse((await execFileAsync("node", [cliPath, "runtime", "status", "--root", root])).stdout);
+      assert.equal(status.reachable, true);
+      firstPid = status.pid;
+    } finally {
+      await first.close();
+    }
+    assert.equal(JSON.parse((await execFileAsync("node", [cliPath, "runtime", "status", "--root", root])).stdout).reachable, false);
+
+    const restarted = startMcpClient(root);
+    try {
+      await restarted.call({ jsonrpc: "2.0", id: 3, method: "initialize", params: {} });
+      const response = await restarted.call({
+        jsonrpc: "2.0",
+        id: 4,
+        method: "tools/call",
+        params: { name: "status_wiki", arguments: { strict: true } },
+      });
+      const payload = JSON.parse(response.result.content[0].text);
+      const status = JSON.parse((await execFileAsync("node", [cliPath, "runtime", "status", "--root", root])).stdout);
+      assert.equal(payload.runtime.mode, "daemon");
+      assert.equal(payload.stale, false);
+      assert.equal(status.reachable, true);
+      assert.notEqual(status.pid, firstPid);
+    } finally {
+      await restarted.close();
+    }
+  });
+});
+
 test("cli search and grep can isolate one project while retaining common wiki", async () => {
   await withTempDir(async (root) => {
     await mkdir(path.join(root, "wiki", "legacy-app"), { recursive: true });
@@ -58,6 +163,25 @@ test("cli search and grep can isolate one project while retaining common wiki", 
       "wiki/common/source.md",
       "wiki/legacy-app/questionnaire.md",
     ]);
+  });
+});
+
+test("cli grep forwards max-chunks-per-path", async () => {
+  await withTempDir(async (root) => {
+    const sections = Array.from({ length: 4 }, (_, index) => (
+      `## Chunk ${index + 1}\nCLI_GREP_PATH_LIMIT\n${"x".repeat(2600)}`
+    )).join("\n\n");
+    await writeFile(path.join(root, "wiki", "long.md"), `# Long\n${sections}`);
+    await writeFile(path.join(root, "wiki", "other.md"), "# Other\nCLI_GREP_PATH_LIMIT");
+    await execFileAsync("node", [cliPath, "index", "--root", root, "--include", "wiki"]);
+
+    const result = JSON.parse((await execFileAsync("node", [
+      cliPath, "grep", "CLI_GREP_PATH_LIMIT", "--root", root,
+      "--top-k", "20", "--max-chunks-per-path", "1",
+    ])).stdout);
+
+    assert.equal(result.results.filter((entry) => entry.path === "wiki/long.md").length, 1);
+    assert(result.results.some((entry) => entry.path === "wiki/other.md"));
   });
 });
 

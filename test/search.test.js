@@ -225,6 +225,126 @@ test("searchIndex prefers stable wiki over old daily and de-duplicates daily top
   assert.equal(results.filter((result) => result.source_type === "daily").length, 1);
 });
 
+test("searchIndex propagates frontmatter lifecycle to every chunk in an archived document", () => {
+  const index = buildIndex([
+    {
+      id: "wiki/current.md#1",
+      path: "wiki/current.md",
+      heading: "Document",
+      text: "---\ntags: [requirement, active]\ntype: requirement\n---",
+    },
+    {
+      id: "wiki/current.md#2",
+      path: "wiki/current.md",
+      heading: "Current baseline",
+      text: "QUESTIONNAIRE_CURRENT_BASELINE",
+    },
+    {
+      id: "wiki/archived.md#1",
+      path: "wiki/archived.md",
+      heading: "Document",
+      text: "---\ntags: [requirement, archived]\ntype: requirement\n---",
+    },
+    {
+      id: "wiki/archived.md#2",
+      path: "wiki/archived.md",
+      heading: "Historical details",
+      text: "QUESTIONNAIRE_CURRENT_BASELINE",
+    },
+    {
+      id: "wiki/superseded.md#1",
+      path: "wiki/superseded.md",
+      heading: "Document",
+      text: "---\ntags: [requirement]\ntype: requirement\nsupersededBy: wiki/current.md\n---",
+    },
+    {
+      id: "wiki/superseded.md#2",
+      path: "wiki/superseded.md",
+      heading: "Superseded details",
+      text: "QUESTIONNAIRE_CURRENT_BASELINE",
+    },
+  ]);
+
+  const report = explainSearch(index, "QUESTIONNAIRE_CURRENT_BASELINE", {
+    topK: 10,
+    diversity: false,
+  });
+  const current = report.results.find((result) => result.id === "wiki/current.md#2");
+  const archived = report.results.find((result) => result.id === "wiki/archived.md#2");
+  const superseded = report.results.find((result) => result.id === "wiki/superseded.md#2");
+
+  assert(current.score > archived.score);
+  assert(current.score > superseded.score);
+  assert.equal(archived.scores.lifecycle, -1);
+  assert.equal(archived.scores.lifecycle_multiplier, 0.2);
+  assert.equal(archived.explanation.lifecycle_status, "archived");
+  assert.equal(superseded.scores.lifecycle, -1);
+  assert.equal(superseded.scores.lifecycle_multiplier, 0.2);
+  assert.equal(superseded.explanation.lifecycle_status, "superseded");
+});
+
+test("searchIndex relaxes archived lifecycle only for matching explicit historical versions", () => {
+  const index = buildIndex([
+    {
+      id: "wiki/kfgzt/requirement-TOB-V2.3.5.md#1",
+      path: "wiki/kfgzt/requirement-TOB-V2.3.5.md",
+      heading: "TOB 客户满意度 V2.3.5 当前完整需求",
+      text: "---\nstatus: active\n---\nTOB 客户满意度当前完整需求和现行开发基线。相关页面：TOB V2.3.4 历史基线。",
+    },
+    {
+      id: "wiki/kfgzt/requirement-TOB-V2.3.4.md#1",
+      path: "wiki/kfgzt/requirement-TOB-V2.3.4.md",
+      heading: "TOB 客户满意度 V2.3.4 历史基线",
+      text: "---\nstatus: archived\n---\nTOB 客户满意度历史需求基线。",
+    },
+    {
+      id: "wiki/kfgzt/source-TOB-V1.3.md#1",
+      path: "wiki/kfgzt/source-TOB-V1.3.md",
+      heading: "TOB 客户满意度 V1.3 历史规则",
+      text: "---\ntags: [source-summary, archived]\n---\nTOB 客户满意度早期历史规则。",
+    },
+  ]);
+
+  const current = explainSearch(index, "TOB 当前完整需求", { topK: 3, diversity: false });
+  const v234 = explainSearch(index, "TOB V2.3.4 历史基线", { topK: 3, diversity: false });
+  const v13 = explainSearch(index, "追溯 TOB V1.3 历史规则", { topK: 3, diversity: false });
+  const versionWithoutHistory = explainSearch(index, "TOB V2.3.4 基线", { topK: 3, diversity: false });
+
+  assert.equal(current.results[0].path, "wiki/kfgzt/requirement-TOB-V2.3.5.md");
+  assert.equal(v234.results[0].path, "wiki/kfgzt/requirement-TOB-V2.3.4.md");
+  assert.equal(v234.results[0].scores.lifecycle_multiplier, 1);
+  assert.equal(v234.results[0].scores.version_specificity, 1);
+  assert.equal(v234.results.find((result) => result.path.endsWith("V2.3.5.md")).scores.version_specificity, 0.2);
+  assert.equal(v13.results[0].path, "wiki/kfgzt/source-TOB-V1.3.md");
+  assert.equal(v13.results[0].scores.lifecycle_multiplier, 1);
+  assert.equal(
+    versionWithoutHistory.results.find((result) => result.path.endsWith("V2.3.4.md")).scores.lifecycle_multiplier,
+    0.2,
+  );
+});
+
+test("searchIndex propagates status archived frontmatter to later chunks", () => {
+  const index = buildIndex([
+    {
+      id: "wiki/status-archived.md#1",
+      path: "wiki/status-archived.md",
+      heading: "Document",
+      text: "---\nstatus: archived\n---",
+    },
+    {
+      id: "wiki/status-archived.md#2",
+      path: "wiki/status-archived.md",
+      heading: "Archived details",
+      text: "STATUS_ARCHIVED_DETAILS",
+    },
+  ]);
+
+  const result = explainSearch(index, "STATUS_ARCHIVED_DETAILS", { diversity: false }).results[0];
+
+  assert.equal(result.explanation.lifecycle_status, "archived");
+  assert.equal(result.scores.lifecycle_multiplier, 0.2);
+});
+
 test("searchIndex classifies integrated agent-memory sources relative to scopeRoots", () => {
   const index = buildIndex([
     { id: "agent-memory/MEMORY.md#1", path: "agent-memory/MEMORY.md", heading: "记忆", text: "INTEGRATED_SOURCE" },
@@ -278,6 +398,24 @@ test("searchIndex records source calibration in heterogeneous corpora", () => {
   assert(guide.scores.calibration > navigation.scores.calibration);
   assert(guide.scores.calibration > template.scores.calibration);
   assert(template.scores.calibration <= 0.45);
+});
+
+test("searchIndex classifies project navigation pages without hiding explicit map queries", () => {
+  const index = buildIndex([
+    { id: "wiki/kfgzt/index.md#1", path: "wiki/kfgzt/index.md", heading: "kfgzt 索引", text: "NAVIGATION_CLASSIFICATION 项目入口。" },
+    { id: "wiki/kfgzt/log.md#1", path: "wiki/kfgzt/log.md", heading: "kfgzt 日志", text: "NAVIGATION_CLASSIFICATION 变更记录。" },
+    { id: "wiki/kfgzt/project-map.md#1", path: "wiki/kfgzt/project-map.md", heading: "kfgzt 项目 Map", text: "NAVIGATION_CLASSIFICATION 仓库地图。" },
+    { id: "wiki/kfgzt/requirement-current.md#1", path: "wiki/kfgzt/requirement-current.md", heading: "现行需求基线", text: "NAVIGATION_CLASSIFICATION 当前业务结论。" },
+  ]);
+
+  const ordinary = searchIndex(index, "NAVIGATION_CLASSIFICATION 当前业务结论", { topK: 4, diversity: false });
+  const map = searchIndex(index, "kfgzt 项目 Map NAVIGATION_CLASSIFICATION", { topK: 4, diversity: false });
+
+  assert.equal(ordinary[0].path, "wiki/kfgzt/requirement-current.md");
+  assert.equal(ordinary.find((result) => result.path.endsWith("index.md")).source_type, "wiki_index");
+  assert.equal(ordinary.find((result) => result.path.endsWith("log.md")).source_type, "wiki_index");
+  assert.equal(ordinary.find((result) => result.path.endsWith("project-map.md")).source_type, "wiki_index");
+  assert.equal(map[0].path, "wiki/kfgzt/project-map.md");
 });
 
 test("searchIndex can attach adjacent context and enforce an output token budget", () => {
@@ -347,6 +485,29 @@ test("grepIndex applies the same project scope as semantic search", () => {
   const results = grepIndex(scopedIndex, "QUESTIONNAIRE_API", { projects: ["legacy-app"] });
 
   assert.deepEqual(results.map((result) => result.path), ["wiki/legacy-app/api.md"]);
+});
+
+test("grepIndex limits repeated chunks from one path by default and supports an override", () => {
+  const repeated = Array.from({ length: 5 }, (_, index) => ({
+    id: `wiki/legacy-app/long.md#${index + 1}`,
+    path: "wiki/legacy-app/long.md",
+    heading: `Chunk ${index + 1}`,
+    text: "GREP_PATH_LIMIT",
+  }));
+  const index = buildIndex([
+    ...repeated,
+    { id: "wiki/legacy-app/other.md#1", path: "wiki/legacy-app/other.md", heading: "Other", text: "GREP_PATH_LIMIT" },
+  ]);
+
+  const defaults = grepIndex(index, "GREP_PATH_LIMIT", { topK: 20 });
+  const onePerPath = grepIndex(index, "GREP_PATH_LIMIT", { topK: 20, maxChunksPerPath: 1 });
+
+  assert.equal(defaults.filter((result) => result.path.endsWith("long.md")).length, 3);
+  assert.equal(defaults.length, 4);
+  assert.deepEqual(onePerPath.map((result) => result.path), [
+    "wiki/legacy-app/long.md",
+    "wiki/legacy-app/other.md",
+  ]);
 });
 
 test("project scope supports an explicit cross-project allowlist and can exclude common knowledge", () => {

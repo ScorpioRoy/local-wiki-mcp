@@ -22,12 +22,14 @@ const index = buildIndex([
 test("listTools exposes read-only knowledge tools", () => {
   const toolNames = listTools().map((tool) => tool.name);
   const searchSchema = listTools().find((tool) => tool.name === "search_wiki").inputSchema.properties;
+  const grepSchema = listTools().find((tool) => tool.name === "grep_wiki").inputSchema.properties;
 
   assert.deepEqual(toolNames, ["search_wiki", "grep_wiki", "read_wiki", "status_wiki"]);
   assert.deepEqual(searchSchema.scope.enum, ["global", "project"]);
   assert.equal(searchSchema.project.type, "string");
   assert.equal(searchSchema.projects.type, "array");
   assert.equal(searchSchema.include_common.type, "boolean");
+  assert.equal(grepSchema.max_chunks_per_path.type, "number");
 });
 
 test("MCP initialize reports the product version", async () => {
@@ -98,6 +100,28 @@ test("search_wiki and grep_wiki enforce explicit project scope", async () => {
     "wiki/legacy-app/questionnaire.md",
     "wiki/common/source.md",
   ]);
+});
+
+test("grep_wiki limits repeated chunks per path and accepts an explicit override", async () => {
+  const repeatedIndex = buildIndex([
+    ...Array.from({ length: 5 }, (_, index) => ({
+      id: `wiki/legacy-app/long.md#${index + 1}`,
+      path: "wiki/legacy-app/long.md",
+      heading: `Chunk ${index + 1}`,
+      text: "MCP_GREP_PATH_LIMIT",
+    })),
+    { id: "wiki/legacy-app/other.md#1", path: "wiki/legacy-app/other.md", heading: "Other", text: "MCP_GREP_PATH_LIMIT" },
+  ]);
+  const handlers = createToolHandlers({ loadIndex: async () => repeatedIndex });
+
+  const defaults = JSON.parse((await handlers.grep_wiki({ pattern: "MCP_GREP_PATH_LIMIT" })).content[0].text);
+  const onePerPath = JSON.parse((await handlers.grep_wiki({
+    pattern: "MCP_GREP_PATH_LIMIT",
+    max_chunks_per_path: 1,
+  })).content[0].text);
+
+  assert.equal(defaults.results.filter((result) => result.path.endsWith("long.md")).length, 3);
+  assert.equal(onePerPath.results.filter((result) => result.path.endsWith("long.md")).length, 1);
 });
 
 test("search_wiki canonicalizes repository ids through configured project groups", async () => {
